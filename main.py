@@ -3,6 +3,7 @@ from urllib.parse import urlparse
 from src.core.cli_parser import parse_args
 from src.core.session import ScannerSession
 from src.modules.basic_scan import BasicScanner
+from src.modules.active_scan import ActiveScanner
 
 def main():
     # 1. Eksekusi cli_parser untuk menangkap argumen pengguna
@@ -32,6 +33,14 @@ def main():
         basic_scanner = BasicScanner(session)
         web_findings = basic_scanner.run_scan(args.target)
         all_findings.extend(web_findings)
+        
+    # 6. Eksekusi Web Active Scan
+    if args.scan_type in ['web', 'full']:
+        print("[+] Memulai Web Intermediate & Advanced Scan (Active)...")
+        has_auth = bool(args.cookie or args.token)
+        active_scanner = ActiveScanner(session)
+        active_findings = active_scanner.run_scan(args.target, has_auth=has_auth)
+        all_findings.extend(active_findings)
         
     print("-" * 70)
     print(f"[+] Audit sementara selesai. Ditemukan {len(all_findings)} potensi kerentanan.")
