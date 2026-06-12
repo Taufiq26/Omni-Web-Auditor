@@ -4,6 +4,7 @@ from src.core.cli_parser import parse_args
 from src.core.session import ScannerSession
 from src.modules.basic_scan import BasicScanner
 from src.modules.active_scan import ActiveScanner
+from src.modules.infra_scan import InfraScanner
 
 def main():
     # 1. Eksekusi cli_parser untuk menangkap argumen pengguna
@@ -41,6 +42,13 @@ def main():
         active_scanner = ActiveScanner(session)
         active_findings = active_scanner.run_scan(args.target, has_auth=has_auth)
         all_findings.extend(active_findings)
+        
+    # 7. Eksekusi Infra Scan
+    if args.scan_type in ['infra', 'full']:
+        print("[+] Memulai Server & Infrastructure Scan...")
+        infra_scanner = InfraScanner(session)
+        infra_findings = infra_scanner.run_scan(args.target)
+        all_findings.extend(infra_findings)
         
     print("-" * 70)
     print(f"[+] Audit sementara selesai. Ditemukan {len(all_findings)} potensi kerentanan.")
