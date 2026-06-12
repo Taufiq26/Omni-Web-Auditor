@@ -1,10 +1,12 @@
 import sys
+import datetime
 from urllib.parse import urlparse
 from src.core.cli_parser import parse_args
 from src.core.session import ScannerSession
 from src.modules.basic_scan import BasicScanner
 from src.modules.active_scan import ActiveScanner
 from src.modules.infra_scan import InfraScanner
+from src.reports.pdf_gen import PDFReportGenerator
 
 def main():
     # 1. Eksekusi cli_parser untuk menangkap argumen pengguna
@@ -53,9 +55,20 @@ def main():
     print("-" * 70)
     print(f"[+] Audit sementara selesai. Ditemukan {len(all_findings)} potensi kerentanan.")
     
-    # Print temuan sementara sebelum modul laporan PDF jadi
-    for finding in all_findings:
-        print(f"    - [{finding['severity']}] {finding['vulnerability']} at {finding['location']}")
+    # 8. Menghasilkan Laporan PDF
+    report_filename = args.output
+    if report_filename == "report_target.pdf":
+        parsed_target = urlparse(args.target)
+        target_name = parsed_target.hostname or args.target.replace('http://', '').replace('https://', '').split('/')[0]
+        target_name = target_name.split(':')[0]
+        date_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        report_filename = f"audit_report_{target_name}_{date_str}.pdf"
+        
+    print(f"[+] Menghasilkan Laporan PDF: {report_filename}...")
+    report_gen = PDFReportGenerator(all_findings, args.target)
+    report_gen.generate_report(report_filename)
+    
+    print(f"[+] Selesai! Laporan berhasil disimpan ke {report_filename}")
 
 if __name__ == "__main__":
     main()
