@@ -2,6 +2,7 @@ import sys
 from urllib.parse import urlparse
 from src.core.cli_parser import parse_args
 from src.core.session import ScannerSession
+from src.modules.basic_scan import BasicScanner
 
 def main():
     # 1. Eksekusi cli_parser untuk menangkap argumen pengguna
@@ -21,6 +22,23 @@ def main():
             
     # 4. Print sukses inisialisasi
     print(f"[+] Memulai sesi audit untuk target: {args.target} dan tipe scan: {args.scan_type}")
+    print("-" * 70)
+    
+    all_findings = []
+    
+    # 5. Eksekusi Web Basic Scan
+    if args.scan_type in ['web', 'full']:
+        print("[+] Memulai Web Basic Security Scan...")
+        basic_scanner = BasicScanner(session)
+        web_findings = basic_scanner.run_scan(args.target)
+        all_findings.extend(web_findings)
+        
+    print("-" * 70)
+    print(f"[+] Audit sementara selesai. Ditemukan {len(all_findings)} potensi kerentanan.")
+    
+    # Print temuan sementara sebelum modul laporan PDF jadi
+    for finding in all_findings:
+        print(f"    - [{finding['severity']}] {finding['vulnerability']} at {finding['location']}")
 
 if __name__ == "__main__":
     main()
