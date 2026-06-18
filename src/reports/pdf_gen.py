@@ -1,6 +1,6 @@
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, HRFlowable
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from typing import List, Dict
 import datetime
@@ -14,11 +14,69 @@ class PDFReportGenerator:
         self.total_low = 0
         self._calculate_stats()
         self.styles = getSampleStyleSheet()
+        self._setup_custom_styles()
+
+    def _setup_custom_styles(self):
+        self.styles.add(ParagraphStyle(
+            name='ReportTitle',
+            parent=self.styles['Title'],
+            fontName='Helvetica-Bold',
+            fontSize=26,
+            textColor=colors.HexColor('#2C3E50'),
+            spaceAfter=10,
+            alignment=1
+        ))
+        
+        self.styles.add(ParagraphStyle(
+            name='SubTitle',
+            parent=self.styles['Title'],
+            fontName='Helvetica',
+            fontSize=16,
+            textColor=colors.HexColor('#7F8C8D'),
+            spaceAfter=20,
+            alignment=1
+        ))
+        
+        self.styles.add(ParagraphStyle(
+            name='SectionHeader',
+            parent=self.styles['Heading2'],
+            fontName='Helvetica-Bold',
+            fontSize=16,
+            textColor=colors.HexColor('#34495E'),
+            spaceBefore=20,
+            spaceAfter=15,
+            borderPadding=5
+        ))
+
+        self.styles.add(ParagraphStyle(
+            name='NormalText',
+            parent=self.styles['Normal'],
+            fontName='Helvetica',
+            fontSize=11,
+            textColor=colors.HexColor('#2C3E50'),
+            spaceAfter=10,
+            leading=16
+        ))
+
+        self.styles.add(ParagraphStyle(
+            name='CodeBlock',
+            parent=self.styles['Normal'],
+            fontName='Courier',
+            fontSize=10,
+            textColor=colors.HexColor('#C0392B'),
+            backColor=colors.HexColor('#FDFEFE'),
+            borderPadding=8,
+            borderWidth=1,
+            borderColor=colors.HexColor('#E5E8E8'),
+            borderRadius=4,
+            spaceAfter=5,
+            leading=14
+        ))
 
     def _calculate_stats(self):
         for finding in self.findings:
             sev = finding.get('severity', '').lower()
-            if sev == 'high' or sev == 'critical':
+            if sev in ['high', 'critical']:
                 self.total_high += 1
             elif sev == 'medium':
                 self.total_medium += 1
@@ -27,77 +85,109 @@ class PDFReportGenerator:
 
     def _get_health_status(self):
         if self.total_high > 0:
-            return "CRITICAL / MERAH", colors.red, "Ditemukan kerentanan tingkat Tinggi. Jika dieksploitasi, hal ini dapat menyebabkan gangguan layanan aplikasi dan potensi kebocoran data klien. Disarankan untuk segera mengalokasikan sumber daya teknis untuk perbaikan."
+            return "CRITICAL", colors.HexColor('#C0392B'), "Ditemukan kerentanan tingkat Tinggi. Jika dieksploitasi, hal ini dapat menyebabkan gangguan layanan aplikasi, manipulasi *database*, dan potensi kebocoran data klien secara masif. Disarankan untuk <font color='red'><b>segera</b></font> mengalokasikan sumber daya teknis untuk perbaikan."
         elif self.total_medium > 0:
-            return "WARNING / KUNING", colors.orange, "Ditemukan kerentanan tingkat Menengah. Risiko gangguan cukup signifikan. Disarankan untuk menjadwalkan perbaikan dalam siklus pengembangan terdekat."
+            return "WARNING", colors.HexColor('#D35400'), "Ditemukan kerentanan tingkat Menengah. Risiko gangguan cukup signifikan. Disarankan untuk menjadwalkan perbaikan dalam siklus pengembangan terdekat."
         elif self.total_low > 0:
-            return "NOTICE / BIRU", colors.blue, "Ditemukan kerentanan tingkat Rendah. Secara umum sistem cukup aman, namun disarankan untuk melakukan pengerasan (hardening) lebih lanjut."
+            return "NOTICE", colors.HexColor('#2980B9'), "Ditemukan kerentanan tingkat Rendah. Secara umum sistem cukup aman, namun disarankan untuk melakukan pengerasan (hardening) lebih lanjut."
         else:
-            return "SECURE / HIJAU", colors.green, "Tidak ditemukan kerentanan serius pada target saat ini. Konfigurasi keamanan sudah cukup baik."
+            return "SECURE", colors.HexColor('#27AE60'), "Tidak ditemukan kerentanan serius pada target saat ini. Konfigurasi keamanan sudah cukup baik."
 
     def _build_executive_summary(self) -> List:
         story = []
         
         # Header Laporan
-        title_style = self.styles['Title']
-        story.append(Paragraph("Omni-Web-Auditor: Security Audit Report", title_style))
-        story.append(Spacer(1, 12))
+        story.append(Paragraph("Omni-Web-Auditor", self.styles['ReportTitle']))
+        story.append(Paragraph("Security Audit Report", self.styles['SubTitle']))
+        story.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor('#BDC3C7'), spaceBefore=10, spaceAfter=30))
         
-        normal_style = self.styles['Normal']
         date_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        story.append(Paragraph(f"<b>Tanggal Audit:</b> {date_str}", normal_style))
-        story.append(Paragraph(f"<b>Target:</b> {self.target}", normal_style))
-        story.append(Spacer(1, 20))
+        
+        # Meta Info Table
+        meta_data = [
+            [Paragraph("<b>Target URL / IP</b>", self.styles['NormalText']), Paragraph(f"<a href='{self.target}' color='blue'>{self.target}</a>", self.styles['NormalText'])],
+            [Paragraph("<b>Tanggal Audit</b>", self.styles['NormalText']), Paragraph(f"{date_str}", self.styles['NormalText'])],
+            [Paragraph("<b>Engine Version</b>", self.styles['NormalText']), Paragraph("v1.0.0", self.styles['NormalText'])],
+        ]
+        t_meta = Table(meta_data, colWidths=[150, 330])
+        t_meta.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('LINEBELOW', (0,0), (-1,-1), 0.5, colors.HexColor('#ECF0F1')),
+            ('PADDING', (0,0), (-1,-1), 10),
+        ]))
+        story.append(t_meta)
+        story.append(Spacer(1, 25))
         
         # Indikator Skor Visual & Business Impact
         status_text, status_color, impact_stmt = self._get_health_status()
         
+        story.append(Paragraph("Executive Summary", self.styles['SectionHeader']))
+        
         status_style = ParagraphStyle(
             'StatusStyle', 
             parent=self.styles['Heading2'], 
-            textColor=status_color
+            textColor=status_color,
+            fontSize=16,
+            fontName='Helvetica-Bold'
         )
-        story.append(Paragraph(f"Status Keamanan Keseluruhan: {status_text}", status_style))
-        story.append(Spacer(1, 10))
         
-        # Tabel Ringkasan
-        data = [
-            ['Severity', 'Total Temuan'],
+        story.append(Paragraph(f"Health Status: <font color='{status_color}'>{status_text}</font>", status_style))
+        story.append(Spacer(1, 15))
+        
+        # Tabel Ringkasan (Modern Look)
+        summary_data = [
+            ['Severity Level', 'Total Temuan'],
             ['High / Critical', str(self.total_high)],
             ['Medium', str(self.total_medium)],
             ['Low', str(self.total_low)],
             ['Total Keseluruhan', str(len(self.findings))]
         ]
         
-        t = Table(data, colWidths=[200, 100])
-        t.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.grey),
-            ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+        t_summary = Table(summary_data, colWidths=[250, 150])
+        t_summary.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#2C3E50')),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
             ('ALIGN', (0,0), (-1,-1), 'CENTER'),
             ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0,0), (-1,0), 12),
             ('BOTTOMPADDING', (0,0), (-1,0), 12),
-            ('BACKGROUND', (0,1), (0,1), colors.pink),
-            ('BACKGROUND', (0,2), (0,2), colors.navajowhite),
-            ('BACKGROUND', (0,3), (0,3), colors.lightcyan),
-            ('GRID', (0,0), (-1,-1), 1, colors.black)
+            ('TOPPADDING', (0,0), (-1,0), 12),
+            
+            # Colors for rows
+            ('BACKGROUND', (1,0), (1,0), colors.HexColor('#2C3E50')), # Header
+            ('BACKGROUND', (0,1), (-1,1), colors.HexColor('#FADBD8')), # High bg
+            ('BACKGROUND', (0,2), (-1,2), colors.HexColor('#FDEBD0')), # Medium bg
+            ('BACKGROUND', (0,3), (-1,3), colors.HexColor('#E8F8F5')), # Low bg
+            ('BACKGROUND', (0,4), (-1,4), colors.HexColor('#F2F3F4')), # Total bg
+            
+            ('TEXTCOLOR', (0,1), (0,1), colors.HexColor('#C0392B')), # High Text
+            ('TEXTCOLOR', (0,2), (0,2), colors.HexColor('#D35400')), # Medium Text
+            ('TEXTCOLOR', (0,3), (0,3), colors.HexColor('#16A085')), # Low Text
+            ('FONTNAME', (0,1), (0,3), 'Helvetica-Bold'), # Severity Name Bold
+            ('FONTNAME', (0,4), (-1,4), 'Helvetica-Bold'), # Total Bold
+            
+            ('GRID', (0,0), (-1,-1), 1, colors.white),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('PADDING', (0,0), (-1,-1), 10),
         ]))
-        story.append(t)
-        story.append(Spacer(1, 20))
+        story.append(t_summary)
+        story.append(Spacer(1, 25))
         
         # Business Impact Statement
-        story.append(Paragraph("<b>Business Impact Statement:</b>", self.styles['Heading3']))
-        story.append(Paragraph(impact_stmt, normal_style))
+        story.append(Paragraph("Business Impact", self.styles['SectionHeader']))
+        story.append(Paragraph(impact_stmt, self.styles['NormalText']))
         
         story.append(PageBreak())
         return story
 
     def _build_technical_details(self) -> List:
         story = []
-        story.append(Paragraph("Technical Remediation Details", self.styles['Title']))
-        story.append(Spacer(1, 12))
+        story.append(Paragraph("Technical Remediation Details", self.styles['ReportTitle']))
+        story.append(Paragraph("Daftar temuan teknis yang harus diperbaiki oleh Developer/Tim IT.", self.styles['SubTitle']))
+        story.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor('#BDC3C7'), spaceBefore=10, spaceAfter=30))
         
         if not self.findings:
-            story.append(Paragraph("Tidak ada kerentanan teknis yang ditemukan.", self.styles['Normal']))
+            story.append(Paragraph("<i>Tidak ada kerentanan teknis yang ditemukan pada target.</i>", self.styles['NormalText']))
             return story
             
         for i, finding in enumerate(self.findings):
@@ -109,43 +199,57 @@ class PDFReportGenerator:
             
             sev_lower = sev.lower()
             if sev_lower in ['high', 'critical']:
-                vuln_color = colors.red
+                vuln_color = colors.HexColor('#C0392B')
             elif sev_lower == 'medium':
-                vuln_color = colors.orange
+                vuln_color = colors.HexColor('#D35400')
             else:
-                vuln_color = colors.blue
+                vuln_color = colors.HexColor('#2980B9')
                 
             vuln_style = ParagraphStyle(
                 f'VulnStyle_{i}', 
                 parent=self.styles['Heading3'], 
-                textColor=vuln_color
+                textColor=vuln_color,
+                fontName='Helvetica-Bold',
+                fontSize=14,
+                spaceAfter=10
             )
             
-            normal = self.styles['Normal']
+            # Tampilkan judul vulnerability
+            story.append(Paragraph(f"{i+1}. {vuln} [{sev.upper()}]", vuln_style))
+            
+            # Buat tabel untuk detail
             data = [
-                ['Vulnerability:', Paragraph(f"<b>{vuln}</b> [{sev}]", vuln_style)],
-                ['Location:', Paragraph(loc, normal)],
-                ['Evidence:', Paragraph(evid, normal)],
-                ['Remediation:', Paragraph(rem, normal)]
+                [Paragraph("<b>Location</b>", self.styles['NormalText']), Paragraph(f"<font color='#2980B9'>{loc}</font>", self.styles['NormalText'])],
+                [Paragraph("<b>Evidence</b>", self.styles['NormalText']), Paragraph(evid, self.styles['CodeBlock'])],
+                [Paragraph("<b>Remediation</b>", self.styles['NormalText']), Paragraph(rem, self.styles['NormalText'])]
             ]
             
-            t = Table(data, colWidths=[100, 350])
+            t = Table(data, colWidths=[100, 380])
             t.setStyle(TableStyle([
                 ('ALIGN', (0,0), (0,-1), 'LEFT'),
                 ('VALIGN', (0,0), (-1,-1), 'TOP'),
-                ('FONTNAME', (0,0), (0,-1), 'Helvetica-Bold'),
-                ('GRID', (0,0), (-1,-1), 1, colors.black),
-                ('BACKGROUND', (0,0), (0,-1), colors.lightgrey),
-                ('PADDING', (0,0), (-1,-1), 6)
+                ('BACKGROUND', (0,0), (0,-1), colors.HexColor('#F4F6F7')),
+                ('TEXTCOLOR', (0,0), (0,-1), colors.HexColor('#2C3E50')),
+                ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#BDC3C7')),
+                ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#BDC3C7')),
+                ('PADDING', (0,0), (-1,-1), 12)
             ]))
             
             story.append(t)
-            story.append(Spacer(1, 20))
+            story.append(Spacer(1, 30))
             
         return story
 
     def generate_report(self, filename: str):
-        doc = SimpleDocTemplate(filename, pagesize=letter)
+        # Tambahkan margin agar lebih elegan
+        doc = SimpleDocTemplate(
+            filename, 
+            pagesize=letter,
+            rightMargin=72,
+            leftMargin=72,
+            topMargin=72,
+            bottomMargin=72
+        )
         story = []
         
         story.extend(self._build_executive_summary())
