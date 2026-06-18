@@ -89,9 +89,15 @@ python main.py --target https://example.com --scan-type web
 python main.py --target 192.168.1.100 --scan-type infra
 ```
 
-**3. Scan Lengkap (Full Scan) Menggunakan Autentikasi API**
+**3. Scan Lengkap (Full Scan) Menggunakan Autentikasi API (JWT/Bearer)**
 ```bash
 python main.py --target https://api.example.com --scan-type full --token "eyJhbGciOiJIUzI1NiIsInR5..."
+```
+
+**4. Scan Terautentikasi pada Framework Monolithic (Laravel/CodeIgniter)**
+Gunakan argumen `--cookie` untuk memasukkan *Session Cookie* jika target menggunakan autentikasi berbasis sesi alih-alih API Token.
+```bash
+python main.py --target https://laravel-app.com --scan-type full --cookie "laravel_session=eyJpdiI6I..."
 ```
 
 ---
