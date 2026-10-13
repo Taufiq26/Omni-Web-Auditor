@@ -34,5 +34,25 @@ def parse_args() -> argparse.Namespace:
         default="report_target.pdf",
         help="Nama file laporan (default: report_target.pdf)"
     )
-    
+
+    parser.add_argument(
+        "--endpoints-file",
+        required=False,
+        help="Path file JSON berisi endpoint uji (SQLi/XSS body & IDOR dua-akun) "
+             "yang DISIAPKAN MANUAL penguji. Lihat docs/07-perbaikan-cakupan-scan.md."
+    )
+
+    parser.add_argument(
+        "--origin-ip",
+        required=False,
+        help="IP origin server asli untuk target di balik CDN/WAF. Isi HANYA jika kamu "
+             "punya izin/akses langsung ke server tsb (tool tidak pernah menebak IP origin)."
+    )
+
+    # Kredensial dua-akun untuk uji IDOR/BOLA berbasis UUID (akun uji milik penguji).
+    parser.add_argument("--token-a", required=False, help="Bearer token akun uji A (pemilik objek).")
+    parser.add_argument("--token-b", required=False, help="Bearer token akun uji B (penyerang).")
+    parser.add_argument("--cookie-a", required=False, help="Session cookie akun uji A (pemilik objek).")
+    parser.add_argument("--cookie-b", required=False, help="Session cookie akun uji B (penyerang).")
+
     return parser.parse_args()

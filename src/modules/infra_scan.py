@@ -2,16 +2,35 @@ import socket
 import requests
 import re
 import urllib3
-from typing import List, Dict
+from typing import List, Dict, Optional
 from urllib.parse import urlparse
 from src.core.session import ScannerSession
+from src.core.cdn import detect_cdn
+from src.core.coverage import (
+    coverage_entry,
+    STATUS_TESTED,
+    STATUS_SKIPPED,
+)
 
 # Disable insecure request warning for direct requests
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class InfraScanner:
-    def __init__(self, session: ScannerSession = None):
+    def __init__(self, session: ScannerSession = None, origin_ip: Optional[str] = None):
+        """Scanner infrastruktur (port, SSH banner, cloud storage).
+
+        Args:
+            session: sesi HTTP (untuk cek header CDN & Google Drive link).
+            origin_ip: IP origin yang DIBERIKAN MANUAL penguji untuk target di balik
+                CDN. Hanya dipakai bila penguji memang punya izin/akses langsung ke
+                server tsb (docs/07, Masalah #3). Tool tidak pernah menebak IP origin.
+        """
         self.session = session
+        self.origin_ip = origin_ip
+        self.coverage: List[Dict[str, str]] = []
+
+    def _add_coverage(self, test: str, status: str, detail: str):
+        self.coverage.append(coverage_entry(test, status, detail))
 
     def scan_open_ports(self, ip_target: str) -> List[Dict]:
         findings = []
@@ -99,9 +118,9 @@ class InfraScanner:
                             "evidence": "URL public share Google Drive ditemukan di dalam HTML halaman utama target.",
                             "remediation": "Pastikan file yang dibagikan tidak mengandung informasi sensitif atau gunakan akses terbatas."
                         })
-            except Exception:
-                pass
-                
+            except Exception as e:
+                print(f"[!] Gagal memeriksa link Google Drive publik: {e}")
+
         return findings
 
     def audit_ssh_service(self, ip_target: str) -> List[Dict]:
@@ -133,28 +152,78 @@ class InfraScanner:
             
         return findings
 
+    def _resolve_response_headers(self, target: str):
+        """Ambil header respons target (untuk deteksi CDN). None bila gagal."""
+        if not self.session:
+            return None
+        resp = self.session.get_request(target)
+        return resp.headers if resp is not None else None
+
+    def _select_scan_ip(self, target: str, hostname: str) -> Optional[str]:
+        """Tentukan IP yang BOLEH dipindai, dengan proteksi CDN.
+
+        Mengembalikan IP yang aman dipindai, atau None bila scan harus dilewati
+        (mis. di balik CDN tanpa --origin-ip). Mencatat coverage secara jujur.
+        """
+        # Origin-ip manual selalu menang: penguji sudah menyatakan punya izin ke IP ini.
+        if self.origin_ip:
+            self._add_coverage(
+                "Port/SSH scan", STATUS_TESTED,
+                f"Memakai --origin-ip {self.origin_ip} yang diberikan penguji secara eksplisit.",
+            )
+            return self.origin_ip
+
+        try:
+            ip_address = socket.gethostbyname(hostname)
+        except socket.gaierror:
+            self._add_coverage(
+                "Port/SSH scan", STATUS_SKIPPED,
+                f"Gagal me-resolve hostname {hostname} ke IP. Belum teruji.",
+            )
+            print(f"[!] Gagal mendapatkan IP address dari hostname: {hostname}")
+            return None
+
+        print(f"    Ter-resolve ke: {ip_address}")
+        headers = self._resolve_response_headers(target)
+        cdn = detect_cdn(ip=ip_address, headers=headers)
+        if cdn:
+            msg = (
+                f"IP ter-resolve ({ip_address}) terdeteksi milik {cdn}, bukan server asal. "
+                "Port scan & SSH banner grab TIDAK dijalankan (infrastruktur pihak ketiga di "
+                "luar izin). Berikan --origin-ip bila kamu punya izin langsung ke server asal."
+            )
+            print(f"[!] {msg}")
+            self._add_coverage("Port/SSH scan", STATUS_SKIPPED, msg)
+            return None
+
+        self._add_coverage(
+            "Port/SSH scan", STATUS_TESTED,
+            f"Memindai IP ter-resolve {ip_address} (tidak terdeteksi di belakang CDN).",
+        )
+        return ip_address
+
     def run_scan(self, target: str) -> List[Dict]:
         all_findings = []
-        
+
         parsed = urlparse(target)
         hostname = parsed.hostname or target.replace("http://", "").replace("https://", "").split("/")[0]
         hostname = hostname.split(':')[0]
-        
+
         print(f"[*] Resolving host {hostname} ke IP Address...")
-        try:
-            ip_address = socket.gethostbyname(hostname)
-            print(f"    Ter-resolve ke: {ip_address}")
-            
-            print(f"[*] Menjalankan pemindaian Port terbuka pada IP {ip_address}...")
-            all_findings.extend(self.scan_open_ports(ip_address))
-            
-            print(f"[*] Menjalankan Audit Banner SSH pada IP {ip_address}...")
-            all_findings.extend(self.audit_ssh_service(ip_address))
-            
-        except socket.gaierror:
-            print(f"[!] Gagal mendapatkan IP address dari hostname: {hostname}")
-            
+        scan_ip = self._select_scan_ip(target, hostname)
+
+        if scan_ip:
+            print(f"[*] Menjalankan pemindaian Port terbuka pada IP {scan_ip}...")
+            all_findings.extend(self.scan_open_ports(scan_ip))
+
+            print(f"[*] Menjalankan Audit Banner SSH pada IP {scan_ip}...")
+            all_findings.extend(self.audit_ssh_service(scan_ip))
+
         print(f"[*] Memeriksa kesalahan konfigurasi Cloud Storage & Backup pada domain...")
         all_findings.extend(self.check_storage_privacy(target))
-        
+        self._add_coverage(
+            "Cloud storage misconfiguration", STATUS_TESTED,
+            "Dicek endpoint S3/MinIO/storage umum & link Google Drive publik di HTML.",
+        )
+
         return all_findings

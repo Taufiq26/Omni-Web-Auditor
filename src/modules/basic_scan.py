@@ -1,13 +1,18 @@
 import ssl
 import socket
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict
 from urllib.parse import urlparse
 from src.core.session import ScannerSession
+from src.core.coverage import coverage_entry, STATUS_TESTED
 
 class BasicScanner:
     def __init__(self, session: ScannerSession):
         self.session = session
+        self.coverage: List[Dict[str, str]] = []
+
+    def _add_coverage(self, test: str, status: str, detail: str):
+        self.coverage.append(coverage_entry(test, status, detail))
 
     def check_security_headers(self, url: str) -> List[Dict]:
         findings = []
@@ -52,8 +57,11 @@ class BasicScanner:
                     not_after_str = cert.get('notAfter')
                     if not_after_str:
                         # Format example: 'Oct  8 12:00:00 2024 GMT'
-                        not_after_date = datetime.strptime(not_after_str, '%b %d %H:%M:%S %Y %Z')
-                        days_left = (not_after_date - datetime.utcnow()).days
+                        # Sertifikat selalu dalam GMT; bandingkan sebagai UTC-aware.
+                        not_after_date = datetime.strptime(
+                            not_after_str, '%b %d %H:%M:%S %Y %Z'
+                        ).replace(tzinfo=timezone.utc)
+                        days_left = (not_after_date - datetime.now(timezone.utc)).days
                         if days_left < 14:
                             findings.append({
                                 "vulnerability": "SSL Certificate Expiring Soon",
@@ -83,10 +91,12 @@ class BasicScanner:
                 "remediation": "Periksa konfigurasi sertifikat SSL/TLS, pastikan valid dan diterbitkan oleh Certificate Authority yang terpercaya."
             })
         except socket.timeout:
-            pass # Timeout on port 443, skip gracefully
-        except Exception as e:
-            pass # Other connection errors like connection refused, skip gracefully
-            
+            # Port 443 tidak merespon dalam batas waktu -> target mungkin HTTP-only.
+            print(f"[!] Pemeriksaan SSL/TLS dilewati: timeout ke {hostname}:443.")
+        except (socket.error, ValueError) as e:
+            # mis. connection refused (tanpa HTTPS) atau format tanggal cert aneh.
+            print(f"[!] Pemeriksaan SSL/TLS dilewati untuk {hostname}:443: {e}")
+
         return findings
 
     def check_exposed_files(self, base_url: str) -> List[Dict]:
@@ -140,11 +150,14 @@ class BasicScanner:
         
         print(f"[*] Menjalankan pemeriksaan Security Headers pada {target}...")
         all_findings.extend(self.check_security_headers(target))
-        
+        self._add_coverage("Security headers", STATUS_TESTED, f"Dicek 4 header keamanan pada {target}.")
+
         print(f"[*] Menjalankan pemeriksaan SSL/TLS pada {target}...")
         all_findings.extend(self.check_ssl_cert(target))
-        
+        self._add_coverage("SSL/TLS", STATUS_TESTED, "Dicek masa berlaku sertifikat & versi protokol.")
+
         print(f"[*] Menjalankan pemeriksaan Exposed Files pada {target}...")
         all_findings.extend(self.check_exposed_files(target))
-        
+        self._add_coverage("Exposed sensitive files", STATUS_TESTED, "Dicek .env/.git/backup/dll.")
+
         return all_findings

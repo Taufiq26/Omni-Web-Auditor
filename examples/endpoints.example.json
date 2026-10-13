@@ -1,0 +1,18 @@
+{
+  "_catatan": "Siapkan file ini MANUAL dari dokumentasi API resmi target (bukan hasil crawling). Field bernilai '{{INJECT}}' adalah titik injeksi SQLi/XSS. idor_object_urls = URL objek milik AKUN UJI A milikmu sendiri.",
+  "injection_tests": [
+    {
+      "method": "POST",
+      "url": "https://api.contoh-target.com/api/auth/login",
+      "body": { "email": "{{INJECT}}", "password": "dummy" }
+    },
+    {
+      "method": "GET",
+      "url": "https://api.contoh-target.com/api/search",
+      "query": { "q": "{{INJECT}}" }
+    }
+  ],
+  "idor_object_urls": [
+    "https://api.contoh-target.com/api/passes/550e8400-e29b-41d4-a716-446655440000"
+  ]
+}

@@ -34,3 +34,18 @@ class ScannerSession:
         except RequestException as e:
             print(f"[!] POST request failed for {url}: {e}")
             return None
+
+    def request(self, method: str, url: str, **kwargs) -> Optional[requests.Response]:
+        """Request generik untuk method apa pun (GET/POST/PUT/PATCH/DELETE).
+
+        Dipakai oleh pengujian injeksi berbasis endpoint (lihat endpoints-file).
+        Tetap melewati satu jalur error-handling yang sama seperti get/post.
+        """
+        try:
+            response = self.session.request(
+                method.upper(), url, timeout=self.timeout, **kwargs
+            )
+            return response
+        except RequestException as e:
+            print(f"[!] {method.upper()} request failed for {url}: {e}")
+            return None

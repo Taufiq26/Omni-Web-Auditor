@@ -4,15 +4,18 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from typing import List, Dict
 import datetime
+from src.reports.rationale import secure_reason, count_related_findings
 
 class PDFReportGenerator:
-    def __init__(self, findings: List[Dict], target: str):
+    def __init__(self, findings: List[Dict], target: str, coverage: List[Dict] = None):
         self.findings = findings
         self.target = target
+        self.coverage = coverage or []
         self.total_high = 0
         self.total_medium = 0
         self.total_low = 0
         self._calculate_stats()
+        self.total_skipped = sum(1 for c in self.coverage if c.get('status') == 'SKIPPED')
         self.styles = getSampleStyleSheet()
         self._setup_custom_styles()
 
@@ -90,8 +93,16 @@ class PDFReportGenerator:
             return "WARNING", colors.HexColor('#D35400'), "Ditemukan kerentanan tingkat Menengah. Risiko gangguan cukup signifikan. Disarankan untuk menjadwalkan perbaikan dalam siklus pengembangan terdekat."
         elif self.total_low > 0:
             return "NOTICE", colors.HexColor('#2980B9'), "Ditemukan kerentanan tingkat Rendah. Secara umum sistem cukup aman, namun disarankan untuk melakukan pengerasan (hardening) lebih lanjut."
+        elif self.total_skipped > 0:
+            # Tidak ada temuan TAPI ada pengujian yang dilewati -> jangan klaim "aman".
+            return "INCONCLUSIVE", colors.HexColor('#D35400'), (
+                f"Tidak ditemukan kerentanan, NAMUN {self.total_skipped} jenis pengujian "
+                "<b>tidak dijalankan</b> (lihat bagian Scan Coverage). Status ini "
+                "<b>belum</b> berarti target aman -- sebagian cakupan belum teruji. "
+                "Lengkapi kredensial/endpoint uji lalu scan ulang untuk kesimpulan yang valid."
+            )
         else:
-            return "SECURE", colors.HexColor('#27AE60'), "Tidak ditemukan kerentanan serius pada target saat ini. Konfigurasi keamanan sudah cukup baik."
+            return "SECURE", colors.HexColor('#27AE60'), "Tidak ditemukan kerentanan serius pada target saat ini, dan seluruh pengujian yang relevan telah dijalankan."
 
     def _build_executive_summary(self) -> List:
         story = []
@@ -180,6 +191,80 @@ class PDFReportGenerator:
         story.append(PageBreak())
         return story
 
+    def _coverage_result(self, entry: Dict):
+        """Tentukan (label_hasil, warna, penjelasan) untuk satu baris coverage.
+
+        Untuk pengujian TESTED, laporan menyertakan BUKTI: apakah aman (dengan
+        alasan singkat) atau ada temuan terkait (rujuk detail teknis). Ini membuat
+        laporan tetap informatif meski tidak ada kerentanan sama sekali.
+        """
+        status = entry.get('status', 'UNKNOWN')
+        test_name = entry.get('test', '')
+        detail = entry.get('detail', '-')
+
+        if status == 'TESTED':
+            related = count_related_findings(test_name, self.findings)
+            if related > 0:
+                return (
+                    f"&#9888; Ditemukan {related} temuan",
+                    colors.HexColor('#C0392B'),
+                    "Ada kelemahan pada aspek ini -- lihat bagian Technical Remediation Details.",
+                )
+            return (
+                "&#10004; Aman",
+                colors.HexColor('#16A085'),
+                secure_reason(test_name),
+            )
+        if status == 'SKIPPED':
+            return ("Belum teruji", colors.HexColor('#D35400'), detail)
+        if status == 'NOT_APPLICABLE':
+            return ("Tidak berlaku", colors.HexColor('#7F8C8D'), detail)
+        return (status, colors.HexColor('#2C3E50'), detail)
+
+    def _build_coverage_section(self) -> List:
+        """Seksi bukti & kejujuran: apa yang diuji, hasilnya, dan kenapa aman.
+
+        - Tes yang lulus disertai alasan singkat kenapa aspek itu aman (bukti).
+        - Tes yang dilewati ditandai 'Belum teruji' -> cegah 'false sense of
+          security' (docs/07-perbaikan-cakupan-scan.md, prinsip #6).
+        """
+        story = []
+        if not self.coverage:
+            return story
+
+        story.append(Paragraph("Scan Coverage & Evidence", self.styles['ReportTitle']))
+        story.append(Paragraph(
+            "Rincian setiap pengujian yang dijalankan beserta hasil dan alasannya. "
+            "Status 'Aman' hanya berlaku untuk pengujian yang benar-benar dijalankan.",
+            self.styles['SubTitle']))
+        story.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor('#BDC3C7'), spaceBefore=10, spaceAfter=20))
+
+        data = [[
+            Paragraph("<b>Pengujian</b>", self.styles['NormalText']),
+            Paragraph("<b>Hasil</b>", self.styles['NormalText']),
+            Paragraph("<b>Penjelasan</b>", self.styles['NormalText']),
+        ]]
+        for c in self.coverage:
+            label, color, explanation = self._coverage_result(c)
+            data.append([
+                Paragraph(c.get('test', '-'), self.styles['NormalText']),
+                Paragraph(f"<font color='{color}'><b>{label}</b></font>", self.styles['NormalText']),
+                Paragraph(explanation, self.styles['NormalText']),
+            ])
+
+        t = Table(data, colWidths=[120, 95, 265])
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#2C3E50')),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#BDC3C7')),
+            ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#BDC3C7')),
+            ('PADDING', (0,0), (-1,-1), 8),
+        ]))
+        story.append(t)
+        story.append(PageBreak())
+        return story
+
     def _build_technical_details(self) -> List:
         story = []
         story.append(Paragraph("Technical Remediation Details", self.styles['ReportTitle']))
@@ -187,7 +272,20 @@ class PDFReportGenerator:
         story.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor('#BDC3C7'), spaceBefore=10, spaceAfter=30))
         
         if not self.findings:
-            story.append(Paragraph("<i>Tidak ada kerentanan teknis yang ditemukan pada target.</i>", self.styles['NormalText']))
+            tested = sum(1 for c in self.coverage if c.get('status') == 'TESTED')
+            msg = (
+                f"Tidak ada kerentanan teknis yang ditemukan. Sebanyak {tested} jenis "
+                "pengujian telah dijalankan dan lulus -- rincian bukti tiap pengujian "
+                "beserta alasan keamanannya tercantum pada bagian "
+                "<b>Scan Coverage &amp; Evidence</b> di atas."
+            )
+            if self.total_skipped > 0:
+                msg += (
+                    f" <b>Catatan:</b> {self.total_skipped} pengujian tidak dijalankan "
+                    "(lihat status 'Belum teruji'), sehingga hasil ini belum mencakup "
+                    "seluruh permukaan serangan."
+                )
+            story.append(Paragraph(msg, self.styles['NormalText']))
             return story
             
         for i, finding in enumerate(self.findings):
@@ -253,6 +351,7 @@ class PDFReportGenerator:
         story = []
         
         story.extend(self._build_executive_summary())
+        story.extend(self._build_coverage_section())
         story.extend(self._build_technical_details())
         
         doc.build(story)
