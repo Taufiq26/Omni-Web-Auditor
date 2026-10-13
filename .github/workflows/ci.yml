@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Lint (ruff)
+        run: ruff check src/ tests/ audit.py benchmark/
+      - name: Test + coverage (>= 80%)
+        run: pytest --cov=src --cov-report=term-missing --cov-fail-under=80 -q
+
+  benchmark:
+    # Berat (Docker lab + pull image); jalankan manual via "Run workflow".
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt PyYAML
+      - name: Start lab
+        run: docker compose -f benchmark/docker-compose.yml up -d
+      - name: Wait for targets
+        run: |
+          for url in http://localhost:3001 http://localhost:8080 http://localhost:8081; do
+            curl -s -o /dev/null --retry 40 --retry-delay 3 --retry-all-errors --max-time 10 "$url" || true
+          done
+      - name: Run benchmark
+        run: python -m benchmark.run
+      - name: Tear down
+        if: always()
+        run: docker compose -f benchmark/docker-compose.yml down

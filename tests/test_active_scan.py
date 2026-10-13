@@ -117,3 +117,41 @@ def test_body_injection_detects_sql_error():
     scanner = ActiveScanner(s, endpoints=cfg)
     findings = scanner.test_input_validation_body()
     assert any("SQL Injection" in f.vulnerability for f in findings)
+
+
+def test_detect_components_outdated_jquery():
+    html = '<html><head><script src="/js/jquery-1.11.0.min.js"></script></head></html>'
+    resp = FakeResponse(200, text=html, content_type="text/html")
+    resp.headers["Content-Type"] = "text/html"
+    s = FakeSession(default=resp)
+    findings = ActiveScanner(s).detect_components("https://x.com")
+    assert any("Outdated JavaScript" in f.vulnerability for f in findings)
+
+
+def test_detect_components_powered_by():
+    resp = FakeResponse(200, text="", content_type="text/html")
+    resp.headers = {"X-Powered-By": "PHP/7.2", "Content-Type": "text/html"}
+    s = FakeSession(default=resp)
+    findings = ActiveScanner(s).detect_components("https://x.com")
+    assert any("Outdated Server Component" in f.vulnerability for f in findings)
+
+
+def test_input_validation_sqli_query():
+    resp = FakeResponse(200, text="You have an error in your SQL syntax", content_type="text/html")
+    s = FakeSession(default=resp)
+    findings = ActiveScanner(s).test_input_validation("https://x.com/p?id=1")
+    assert any("SQL Injection" in f.vulnerability for f in findings)
+
+
+def test_input_validation_no_params():
+    s = FakeSession(default=FakeResponse(200))
+    assert ActiveScanner(s).test_input_validation("https://x.com/p") == []
+
+
+def test_run_scan_records_coverage():
+    s = FakeSession(default=FakeResponse(200, text="", content_type="text/html"))
+    scanner = ActiveScanner(s)
+    scanner.run_scan("https://x.com", has_auth=False)
+    tests = {c.test for c in scanner.coverage}
+    assert "SQLi/XSS (query parameter)" in tests
+    assert "IDOR/BOLA (dua-akun UUID)" in tests

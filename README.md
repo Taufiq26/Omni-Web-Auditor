@@ -1,8 +1,15 @@
-# 🛡️ Omni-Web-Auditor CLI
+# 🛡️ Omni-Web-Auditor
 
-Omni-Web-Auditor adalah sebuah *command-line tool* (CLI) otomatis berbasis Python yang dirancang untuk melakukan audit keamanan komprehensif pada lapisan aplikasi web (Layer 7) hingga infrastruktur server (Layer 3 & 4). Tool ini dibangun menggunakan arsitektur *Object-Oriented Programming* (OOP) yang modular, serta dilengkapi dengan fitur *dual-layer reporting* yang cocok untuk kebutuhan manajemen maupun tim teknis.
+Omni-Web-Auditor adalah **kerangka kerja asesmen keamanan web berbasis OWASP WSTG**
+(Web Security Testing Guide v4.2) berupa CLI Python. Tool ini menggabungkan
+pemeriksaan otomatis (native + tool industri seperti nuclei, testssl.sh, OWASP ZAP,
+sqlmap), checklist WSTG yang dapat diisi manual, pengumpulan bukti ber-hash, dan
+verdict `PASS/FAIL/INCOMPLETE` yang dapat dipertanggungjawabkan — lalu menghasilkan
+laporan PDF yang layak diserahkan ke klien.
 
-Target pengguna aplikasi ini meliputi DevOps Engineer, IT Freelancer, Cloud Architect, hingga System Administrator yang membutuhkan validasi keamanan (*sanity check*) secara cepat dan menyeluruh.
+> **Posisi yang jujur:** tool ini menghasilkan **WSTG-based self-assessment**, bukan
+> pengganti pentest pihak ketiga independen. Verdict `PASS` berarti lolos kriteria
+> asesmen yang didefinisikan (lihat di bawah) — bukan sertifikasi keamanan.
 
 ---
 
@@ -10,154 +17,132 @@ Target pengguna aplikasi ini meliputi DevOps Engineer, IT Freelancer, Cloud Arch
 
 **Tool ini dikembangkan secara murni HANYA UNTUK TUJUAN EDUKASI dan AUDIT SISTEM YANG SAH di mana Anda memiliki izin tertulis secara eksplisit (Rules of Engagement) dari pemilik sistem. Penulis maupun kontributor TIDAK BERTANGGUNG JAWAB atas segala bentuk kerusakan, kerugian, atau penyalahgunaan tool ini untuk aktivitas ilegal.**
 
----
-
-## ✨ Daftar Fitur Utama
-
-Omni-Web-Auditor dilengkapi dengan berbagai modul keamanan cerdas:
-
-*   **Passive Web Scan (Basic)**
-    *   Analisis ketiadaan HTTP Security Headers (HSTS, CSP, X-Frame-Options, dsb).
-    *   Pemeriksaan validitas, masa kedaluwarsa, dan versi protokol SSL/TLS.
-    *   Pendeteksian kebocoran file sensitif (*Information Disclosure*) melalui *path* publik (seperti `/.env`, `/.git/config`, `/.DS_Store`, `/backup.zip`).
-*   **Active Web Scan (Intermediate & Advanced)**
-    *   Identifikasi *Outdated Components* (versi CMS WordPress/Joomla, pustaka JavaScript, dan *Header* PHP).
-    *   Injeksi *payload proof-of-concept* untuk mendeteksi *SQL Injection* (*Error-Based*) dan *Reflected XSS* — baik pada **query parameter URL** maupun pada **body/parameter JSON** endpoint API (via `--endpoints-file`).
-    *   Otomatisasi pengujian celah API logika bisnis (IDOR / BOLA):
-        *   **ID numerik berurutan** (ID+1) dengan *request kontrol* untuk menekan *false-positive*.
-        *   **Dua-akun (UUID-based)** — akun uji A vs akun uji B — untuk sistem yang memakai UUID (tidak bisa diuji dengan ID+1).
-*   **Server & Infrastructure Scan**
-    *   Pemindaian TCP *Port* untuk mendeteksi layanan *database* terekspos (MySQL, PostgreSQL, Redis, MongoDB).
-    *   Audit celah miskonfigurasi keamanan di layanan *Cloud Storage* (AWS S3, MinIO) dan Google Drive URL.
-    *   *Banner Grabbing* untuk mendeteksi penggunaan versi OpenSSH yang rentan.
-    *   **Proteksi CDN/WAF:** mendeteksi target di balik Cloudflare secara otomatis dan **menolak memindai IP pihak ketiga**; pindai server asal hanya bila IP origin diberikan manual via `--origin-ip`.
-*   **PDF Report Engine (Dual-Layer + Evidence)**
-    *   Pembuatan laporan PDF secara otomatis dengan desain yang profesional menggunakan pustaka `reportlab`.
-    *   Menghasilkan *Health Score* berdasarkan temuan secara *real-time*.
-    *   **Scan Coverage & Evidence:** bagian khusus yang mencatat setiap pengujian — dijalankan / dilewati / tidak berlaku — lengkap dengan hasil (✔ Aman / ⚠ Ada temuan / Belum teruji) dan alasan singkat mengapa suatu aspek dianggap aman. Laporan tetap informatif & bisa menjadi bukti meski **tidak ada** kerentanan.
-    *   **Status jujur:** bila tidak ada temuan **tetapi** ada pengujian yang dilewati, status laporan menjadi `INCONCLUSIVE` (bukan `SECURE`) — mencegah *false sense of security*.
+Prinsip yang ditegakkan oleh kode (bukan sekadar dokumen):
+- **Scope ditegakkan**: request ke host di luar `scope` ditolak otomatis (`ScopeError`).
+- **Non-destruktif**: payload hanya memicu bukti (error/reflection), tidak mengubah data.
+- **Mode intrusif (sqlmap, ZAP active) hanya di environment `staging`** dengan flag eksplisit.
+- **Di balik CDN**: port scan dilewati otomatis kecuali IP origin diberikan manual.
+- **Tool yang tidak tersedia ditandai belum teruji**, tidak pernah dianggap lulus diam-diam.
 
 ---
 
-## ⚙️ Panduan Instalasi
+## ✨ Fitur Utama
 
-Ikuti langkah-langkah di bawah ini untuk menjalankan Omni-Web-Auditor di mesin Anda:
-
-1.  **Clone Repositori**
-    ```bash
-    git clone https://github.com/Taufiq26/Omni-Web-Auditor.git
-    cd Omni-Web-Auditor
-    ```
-
-2.  **Buat & Aktifkan Virtual Environment**
-    ```bash
-    python3 -m venv venv
-    
-    # Untuk MacOS / Linux:
-    source venv/bin/activate
-    
-    # Untuk Windows:
-    venv\Scripts\activate
-    ```
-
-3.  **Instal Dependensi**
-    ```bash
-    pip install -r requirements.txt
-    ```
+- **Native checks**: security headers, SSL/TLS (protokol dinegosiasikan), file sensitif
+  terekspos, deteksi komponen usang, IDOR/BOLA (ID+1 dengan request kontrol & dua-akun UUID),
+  port/servis terekspos, cloud storage, deteksi CDN.
+- **Adapter tool industri (via Docker)**: `nuclei` (CVE/misconfig), `testssl.sh` (audit TLS
+  lengkap), `OWASP ZAP` (baseline pasif / full active), `sqlmap` (konfirmasi SQLi, staging).
+- **Checklist WSTG v4.2**: status `auto`/`manual`/`hybrid`, diisi otomatis dari hasil scan +
+  dilengkapi penilaian & bukti manual.
+- **Verdict engine**: `PASS/FAIL/INCOMPLETE` dengan aturan tegas (lihat di bawah).
+- **Evidence store**: bukti disalin + di-hash SHA-256 + timestamp; header sensitif disensor.
+- **Laporan PDF**: cover+verdict, scope/RoE, metodologi, executive summary, checklist matrix,
+  findings (dengan skor CVSS v3.1), lampiran bukti, dan sign-off (watermark DRAFT bila belum).
 
 ---
 
-## 🚀 Cara Penggunaan (Usage & CLI Arguments)
+## ⚙️ Instalasi
 
-Jalankan *entry point* `main.py` menggunakan Python. 
-
-### Argumen CLI yang Tersedia
-
-*   `--target` **(Wajib)**: URL atau IP address target. Contoh: `https://example.com` atau `192.168.1.10`.
-*   `--scan-type` **(Wajib)**: Pilihan tipe modul pemindaian yang ingin dijalankan.
-    *   `web`: Menjalankan *Basic* dan *Active Scan* pada target berbasis web.
-    *   `infra`: Menjalankan pemindaian port dan *Cloud Storage* pada level server.
-    *   `full`: Menjalankan seluruh modul pengujian dari awal hingga akhir.
-*   `--cookie` *(Opsional)*: Menyisipkan string *session cookie* HTTP untuk melewati halaman *login* (pengujian terautentikasi).
-*   `--token` *(Opsional)*: Menyisipkan *Bearer Token* otorisasi khusus untuk pengujian *endpoint* API (wajib untuk deteksi IDOR ID+1).
-*   `--output` *(Opsional)*: Menentukan nama file keluaran laporan PDF. Jika tidak diisi, *tool* akan men-generate nama otomatis berdasarkan waktu (contoh: `audit_report_example.com_20260612_211658.pdf`).
-*   `--endpoints-file` *(Opsional)*: Path file JSON berisi daftar *endpoint* uji yang **disiapkan manual** dari dokumentasi API resmi target (bukan hasil *crawling*). Dipakai untuk uji SQLi/XSS berbasis **body JSON** dan uji IDOR **dua-akun**. Lihat contoh di `examples/endpoints.example.json`.
-*   `--origin-ip` *(Opsional)*: IP server asal untuk target di balik CDN/WAF (mis. Cloudflare). **Isi HANYA jika Anda memiliki izin/akses langsung ke server tersebut** — *tool* tidak pernah menebak IP origin.
-*   `--token-a` / `--token-b` *(Opsional)*: *Bearer Token* dua **akun uji milik Anda sendiri** (A = pemilik objek, B = penyerang) untuk uji IDOR/BOLA dua-akun pada sistem berbasis UUID.
-*   `--cookie-a` / `--cookie-b` *(Opsional)*: Alternatif berbasis *session cookie* untuk uji IDOR dua-akun.
-
-### Contoh Skenario Penggunaan
-
-**1. Scan Aplikasi Web Biasa (Pasif & Aktif)**
 ```bash
-python main.py --target https://example.com --scan-type web
+git clone https://github.com/Taufiq26/Omni-Web-Auditor.git
+cd Omni-Web-Auditor
+
+python3.11 -m venv venv
+source venv/bin/activate          # Windows: venv\Scripts\activate
+
+pip install -r requirements.txt           # runtime
+# untuk pengembangan + test:
+pip install -r requirements-dev.txt
 ```
 
-**2. Scan Infrastruktur Server Saja**
-```bash
-python main.py --target 192.168.1.100 --scan-type infra
-```
-
-**3. Scan Lengkap (Full Scan) Menggunakan Autentikasi API (JWT/Bearer)**
-```bash
-python main.py --target https://api.example.com --scan-type full --token "eyJhbGciOiJIUzI1NiIsInR5..."
-```
-
-**4. Scan Terautentikasi pada Framework Monolithic (Laravel/CodeIgniter)**
-Gunakan argumen `--cookie` untuk memasukkan *Session Cookie* jika target menggunakan autentikasi berbasis sesi alih-alih API Token.
-```bash
-python main.py --target https://laravel-app.com --scan-type full --cookie "laravel_session=eyJpdiI6I..."
-```
-
-**5. Uji SQLi/XSS pada Body JSON API (Endpoint dari Dokumentasi Resmi)**
-Siapkan `endpoints.json` (lihat `examples/endpoints.example.json`), tandai titik injeksi dengan `{{INJECT}}`:
-```bash
-python main.py --target https://api.example.com --scan-type web \
-  --endpoints-file endpoints.json --token "eyJhbGciOiJIUzI1Ni..."
-```
-
-**6. Uji IDOR / BOLA Dua-Akun untuk Sistem Berbasis UUID**
-Isi `idor_object_urls` di *endpoints-file* dengan URL objek milik **akun uji A**, lalu berikan token kedua akun uji Anda:
-```bash
-python main.py --target https://api.example.com --scan-type web \
-  --endpoints-file endpoints.json \
-  --token-a "TOKEN_AKUN_A" --token-b "TOKEN_AKUN_B"
-```
-> ⚠️ Kedua akun **wajib milik Anda sendiri** (akun uji), bukan akun pengguna nyata di *production*.
-
-**7. Scan Infrastruktur untuk Target di Balik Cloudflare/CDN**
-Secara *default*, port scan akan **dilewati otomatis** jika target di balik CDN. Berikan `--origin-ip` hanya bila Anda punya izin langsung ke server asal:
-```bash
-python main.py --target https://target.com --scan-type infra --origin-ip 203.0.113.10
-```
-
-### Format `--endpoints-file` (JSON)
-```json
-{
-  "injection_tests": [
-    { "method": "POST", "url": "https://api.example.com/api/auth/login",
-      "body": { "email": "{{INJECT}}", "password": "dummy" } },
-    { "method": "GET", "url": "https://api.example.com/api/search",
-      "query": { "q": "{{INJECT}}" } }
-  ],
-  "idor_object_urls": [
-    "https://api.example.com/api/passes/<UUID-objek-milik-akun-A>"
-  ]
-}
-```
-*   `injection_tests`: field apa pun bernilai `"{{INJECT}}"` menjadi titik injeksi SQLi/XSS.
-*   `idor_object_urls`: URL objek milik akun uji A (disiapkan manual) untuk uji IDOR dua-akun.
+**Docker** diperlukan untuk adapter tool eksternal (nuclei/testssl/ZAP). Tanpa Docker,
+native checks tetap jalan dan item terkait adapter ditandai "belum teruji". Image ditarik
+sekali: `docker pull projectdiscovery/nuclei:latest drwetter/testssl.sh:latest zaproxy/zap-stable:latest`.
 
 ---
 
-## 📄 Penjelasan Output Laporan (PDF)
+## 🚀 Alur Penggunaan (CLI `audit`)
 
-Setiap proses audit yang selesai akan menghasilkan sebuah dokumen PDF. Dokumen ini terbagi menjadi 3 (tiga) bagian:
+Entry point tunggal: `python audit.py <subcommand>`.
 
-1.  **Management Summary (Executive Level)**
-    Halaman utama ini menampilkan indikator visual sederhana berupa "Nilai Kesehatan Target" (`SECURE` / `NOTICE` / `WARNING` / `CRITICAL` / `INCONCLUSIVE`) beserta *Business Impact Statement* yang mudah dipahami eksekutif. Terdapat tabel ringkasan total temuan celah *High*, *Medium*, dan *Low*.
-    > Status `INCONCLUSIVE` muncul bila tidak ada temuan **tetapi** ada pengujian yang dilewati — artinya target **belum tentu aman**, sebagian cakupan belum teruji.
-2.  **Scan Coverage & Evidence**
-    Bagian ini adalah **bukti audit**: daftar seluruh pengujian beserta **hasilnya** (✔ Aman / ⚠ Ada temuan / Belum teruji / Tidak berlaku) dan **alasan singkat** kenapa suatu aspek dianggap aman. Dengan begini, meski hasil akhirnya "tidak ada kerentanan", laporan tetap menunjukkan apa saja yang diuji dan mengapa dinyatakan aman — bukan halaman kosong.
-3.  **Technical Remediation Details (Developer Level)**
-    Bagian ini merinci setiap celah secara presisi (dilengkapi *Location URL*, bukti respon HTTP pada *Evidence*, serta panduan *Remediation* langkah demi langkah) agar dapat segera di-*patch* oleh para *Developer* atau tim IT internal.
+```bash
+# 1. Buat engagement (scope default = host target)
+python audit.py init proyek-x --target https://staging.proyek-x.com \
+    --environment staging --tester "Nama Penguji" --intrusive
+
+# 2. Jalankan scan (native + adapter yang tersedia)
+python audit.py run proyek-x --allow-intrusive \
+    --endpoints-file endpoints.json \
+    --token-a "TOKEN_A" --token-b "TOKEN_B"
+
+# 3. Lihat checklist WSTG & isi item manual + bukti
+python audit.py checklist proyek-x
+python audit.py mark WSTG-ATHZ-02 --name proyek-x --status pass \
+    --note "User biasa tidak bisa akses /admin" --evidence bukti1.png
+
+# 4. Kelola temuan (terima risiko / tandai fixed / false positive)
+python audit.py findings proyek-x
+python audit.py finding 0 --name proyek-x --status accepted --note "risiko diterima"
+
+# 5. Hitung verdict, tanda tangani, lalu buat laporan
+python audit.py verdict proyek-x
+python audit.py signoff proyek-x --name-signer "Nama Penguji"
+python audit.py report proyek-x            # -> engagements/proyek-x/pentest_report_proyek-x.pdf
+```
+
+Subcommand: `init · run · checklist · mark · findings · finding · verdict · signoff · report`.
+Bila hanya ada satu engagement, nama boleh dihilangkan.
+
+### Opsi penting `run`
+- `--scan-type {web,infra,full}` (default `full`)
+- `--endpoints-file` — daftar endpoint uji **disiapkan manual** (SQLi/XSS body JSON & IDOR
+  dua-akun). Lihat `examples/endpoints.example.json`.
+- `--origin-ip` — IP origin untuk target di balik CDN (hanya bila punya izin langsung).
+- `--cookie/--token`, `--cookie-a/-b`, `--token-a/-b` — kredensial & akun uji IDOR dua-akun.
+- `--allow-intrusive` — aktifkan sqlmap & ZAP active (hanya berlaku di environment `staging`).
+- `--no-adapters` — native checks saja.
+
+---
+
+## ✅ Definisi "Lolos" (Verdict)
+
+- **FAIL** — ada temuan `Critical`/`High` yang belum tuntas (accept tidak berlaku untuk High+).
+- **PASS** — semua item checklist relevan (non-N/A) berstatus `pass` & berbukti, tidak ada
+  `Critical`/`High` terbuka, temuan `Medium` semua *risk-accepted*, dan laporan sudah **sign-off**.
+- **INCOMPLETE** — masih ada item belum dikerjakan / bukti kurang / `Medium` belum di-accept /
+  belum sign-off.
+
+Item `manual`/`hybrid` yang dinilai lulus **wajib** melampirkan bukti, atau verdict tetap `INCOMPLETE`.
+
+---
+
+## 🧪 Keandalan (Benchmark)
+
+Keandalan diukur objektif terhadap OWASP Juice Shop & DVWA (celah diketahui) plus target
+bersih (false-positive). Lihat [`benchmark/README.md`](benchmark/README.md) untuk cara
+menjalankan dan snapshot angkanya.
+
+---
+
+## 🛠️ Pengembangan
+
+```bash
+pytest --cov=src --cov-report=term-missing   # tes + coverage (ambang CI: 80%)
+ruff check src/ tests/ audit.py benchmark/   # lint
+```
+
+CI (GitHub Actions) menjalankan lint + test + coverage pada setiap push/PR.
+
+---
+
+## 📄 Isi Laporan PDF
+
+1. **Cover & Verdict** — target, periode, penguji + peran, label "WSTG-based self-assessment".
+2. **Scope & Rules of Engagement**.
+3. **Metodologi** — WSTG v4.2 + daftar tool.
+4. **Executive Summary** — ringkasan severity + dasar verdict.
+5. **Checklist Matrix** — status tiap item WSTG + jumlah bukti.
+6. **Findings & Remediation** — severity, skor CVSS, WSTG-ID, lokasi, bukti, remediasi, status.
+7. **Lampiran Bukti** — daftar file + hash SHA-256.
+8. **Sign-off** — nama, peran, pernyataan (atau watermark DRAFT bila belum).
