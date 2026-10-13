@@ -19,10 +19,12 @@ from typing import List, Dict
 
 import yaml
 
-from src.core.models import Finding, severity_rank, SEVERITY_LOW
+from src.core.models import Finding, severity_rank, SEVERITY_MEDIUM
 from src.core.session import ScannerSession
 from src.modules.basic_scan import BasicScanner
 from src.modules.active_scan import ActiveScanner
+from src.core.normalize import deduplicate
+from src.adapters import available_adapters
 from src.core.logging_setup import get_logger
 
 logger = get_logger("benchmark")
@@ -31,27 +33,26 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 RESULTS_DIR = os.path.join(HERE, "results")
 
 
-def available_sources() -> List[str]:
-    """Sumber deteksi yang tersedia saat ini.
-
-    Fase 1: hanya 'native'. Fase 2 menambahkan nuclei/zap/testssl/sqlmap setelah
-    adapter & image Docker-nya ada.
-    """
+def available_sources(intrusive: bool = False) -> List[str]:
+    """Sumber deteksi yang tersedia: native + adapter eksternal yang siap pakai."""
     sources = ["native"]
-    # Hook untuk Fase 2: deteksi ketersediaan adapter eksternal di sini.
+    sources.extend(a.name for a in available_adapters(intrusive=intrusive))
     return sources
 
 
-def scan_target(url: str) -> List[Finding]:
-    """Jalankan native web checks (Basic + Active) terhadap satu URL."""
+def scan_target(url: str, intrusive: bool = False) -> List[Finding]:
+    """Jalankan native web checks + adapter eksternal yang tersedia, lalu dedup."""
     session = ScannerSession()
     findings: List[Finding] = []
     findings.extend(BasicScanner(session).run_scan(url))
     findings.extend(ActiveScanner(session).run_scan(url, has_auth=False))
-    return findings
+    for adapter in available_adapters(intrusive=intrusive):
+        logger.info("  adapter %s ...", adapter.name)
+        findings.extend(adapter.run(url))
+    return deduplicate(findings)
 
 
-def evaluate_target(target: Dict, sources: List[str]) -> Dict:
+def evaluate_target(target: Dict, sources: List[str], intrusive: bool = False) -> Dict:
     from benchmark.matching import any_finding_matches, is_applicable
 
     name, url = target["name"], target["url"]
@@ -59,7 +60,7 @@ def evaluate_target(target: Dict, sources: List[str]) -> Dict:
 
     logger.info("Scanning %s (%s)...", name, url)
     start = time.time()
-    findings = scan_target(url)
+    findings = scan_target(url, intrusive=intrusive)
     duration = round(time.time() - start, 1)
 
     applicable = [e for e in expected if is_applicable(e.get("detectable_by", []), sources)]
@@ -78,24 +79,27 @@ def evaluate_target(target: Dict, sources: List[str]) -> Dict:
     }
 
     if not expected:
-        # Target bersih: semua temuan dengan severity >= Low dihitung false positive.
-        fps = [f for f in findings if severity_rank(f.severity) >= severity_rank(SEVERITY_LOW)]
+        # Target bersih: temuan severity >= Medium dihitung false positive (kriteria plan).
+        # Info/Low dari tool (deteksi teknologi dll.) dicatat terpisah sebagai noise.
+        fps = [f for f in findings if severity_rank(f.severity) >= severity_rank(SEVERITY_MEDIUM)]
+        noise = [f for f in findings if severity_rank(f.severity) < severity_rank(SEVERITY_MEDIUM)]
         result["false_positives"] = len(fps)
         result["false_positive_titles"] = [f.vulnerability for f in fps]
+        result["low_info_noise"] = len(noise)
     else:
         result["recall"] = round(len(matched) / len(applicable), 2) if applicable else None
 
     return result
 
 
-def run(ground_truth_path: str, save_baseline: bool) -> Dict:
+def run(ground_truth_path: str, save_baseline: bool, intrusive: bool = False) -> Dict:
     with open(ground_truth_path, "r", encoding="utf-8") as f:
         gt = yaml.safe_load(f)
 
-    sources = available_sources()
+    sources = available_sources(intrusive=intrusive)
     logger.info("Sumber deteksi tersedia: %s", sources)
 
-    results = [evaluate_target(t, sources) for t in gt.get("targets", [])]
+    results = [evaluate_target(t, sources, intrusive=intrusive) for t in gt.get("targets", [])]
     report = {
         "generated_at": datetime.datetime.now().isoformat(timespec="seconds"),
         "sources": sources,
@@ -141,8 +145,9 @@ def main():
     parser = argparse.ArgumentParser(description="Omni-Web-Auditor benchmark harness")
     parser.add_argument("--ground-truth", default=os.path.join(HERE, "ground_truth.yaml"))
     parser.add_argument("--baseline", action="store_true", help="Simpan juga sebagai baseline.json")
+    parser.add_argument("--intrusive", action="store_true", help="Aktifkan adapter intrusif (staging)")
     args = parser.parse_args()
-    run(args.ground_truth, args.baseline)
+    run(args.ground_truth, args.baseline, intrusive=args.intrusive)
 
 
 if __name__ == "__main__":
