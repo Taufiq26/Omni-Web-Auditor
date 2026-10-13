@@ -1,0 +1,46 @@
+# Ground truth: celah yang DIKETAHUI ada pada tiap target lab, dibatasi pada yang
+# realistis terdeteksi oleh DAST (bukan yang butuh pentest manual).
+#
+# Tiap item punya `detectable_by`: daftar sumber yang SEHARUSNYA bisa menangkapnya.
+# Runner menghitung recall hanya terhadap item yang detectable_by-nya memuat
+# sumber yang sedang tersedia (native sekarang; nuclei/zap/testssl setelah Fase 2).
+#
+# `match` = kata kunci yang dicocokkan (case-insensitive) ke judul vulnerability
+# temuan, ATAU id WSTG pada temuan.
+
+targets:
+  - name: juice-shop
+    url: http://localhost:3001
+    expected:
+      - key: missing-security-headers
+        match: ["missing security header", "WSTG-CONF-07"]
+        detectable_by: [native, zap, nuclei]
+      - key: sqli-login
+        match: ["sql injection", "WSTG-INPV-05"]
+        detectable_by: [zap, sqlmap]
+      - key: xss
+        match: ["xss", "WSTG-INPV-01"]
+        detectable_by: [zap]
+      - key: outdated-components
+        match: ["outdated", "vulnerable", "cve"]
+        detectable_by: [nuclei, zap]
+      - key: exposed-ftp-metadata
+        match: ["exposed", "ftp", "backup"]
+        detectable_by: [nuclei]
+
+  - name: dvwa
+    url: http://localhost:8080
+    expected:
+      - key: missing-security-headers
+        match: ["missing security header", "WSTG-CONF-07"]
+        detectable_by: [native, zap, nuclei]
+      - key: sqli
+        match: ["sql injection", "WSTG-INPV-05"]
+        detectable_by: [zap, sqlmap]
+      - key: xss
+        match: ["xss", "WSTG-INPV-01"]
+        detectable_by: [zap]
+
+  - name: clean-nginx
+    url: http://localhost:8081
+    expected: []   # harus 0 temuan; temuan apa pun = false positive

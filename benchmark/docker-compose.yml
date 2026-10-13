@@ -1,0 +1,26 @@
+# Lab benchmark lokal untuk mengukur keandalan tool secara objektif.
+# Jalankan: docker compose -f benchmark/docker-compose.yml up -d
+# Lalu:     python -m benchmark.run
+#
+# Target sengaja berisi aplikasi yang celahnya SUDAH DIKETAHUI (ground truth),
+# plus satu target "bersih" untuk mengukur false-positive.
+services:
+  juice-shop:
+    image: bkimminich/juice-shop:v17.1.1
+    ports:
+      - "3001:3000"
+    restart: unless-stopped
+
+  dvwa:
+    image: vulnerables/web-dvwa:latest
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+
+  clean-nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "8081:80"
+    volumes:
+      - ./clean-nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped
