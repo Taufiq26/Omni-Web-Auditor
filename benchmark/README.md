@@ -46,30 +46,27 @@ celah DVWA (sisanya butuh SQLi/XSS aktif & deteksi CVE dari ZAP/nuclei/sqlmap).
 False-positive 0 pada target bersih. Fase 2 (adapter tool eksternal) menargetkan
 kenaikan kolom **Matched/Expected** secara signifikan.
 
-## Snapshot Fase 2 (sumber: native + testssl + nuclei)
+## Snapshot Fase 2 (sumber: native + testssl + nuclei, sesudah perbaikan scope)
 
-Run pertama (sebelum perbaikan scope nuclei):
+Terukur dengan ketiga target hidup dan NucleiAdapter non-intrusif dibatasi `-type http`:
 
-| Target      | Findings | Matched/App | Expected | Recall | FP (Med+) |
-|-------------|----------|-------------|----------|--------|-----------|
-| juice-shop  | 3        | 1/3         | 5        | 33%    | -         |
-| dvwa        | 33       | 1/1         | 3        | 100%   | -         |
-| clean-nginx | 21       | 0/0         | 0        | -      | **9**     |
+| Target      | Findings | Matched/App | Expected | Recall | FP (Med+) | Noise (Low/Info) |
+|-------------|----------|-------------|----------|--------|-----------|------------------|
+| juice-shop  | 15       | 1/3         | 5        | 33%    | -         | -                |
+| dvwa        | 4        | 1/1         | 3        | 100%   | -         | -                |
+| clean-nginx | 5        | 0/0         | 0        | -      | **0**     | 5                |
 
-**Temuan penting dari run ini (dan perbaikannya):**
-- Jumlah temuan DVWA melonjak 5 → 33: nuclei menambah cakupan CVE/misconfig secara nyata.
-- **9 false-positive di target "bersih" ternyata BUKAN tentang nginx** — melainkan
-  "Redis default login", "Postgres default login", "mDNS enumeration", dll. Template
-  **network (tcp)** nuclei memindai *seluruh host* lewat `host.docker.internal` dan
-  menyentuh service lain milik pengguna. Ini pelanggaran scope.
-- **Perbaikan:** NucleiAdapter non-intrusif kini dibatasi `-type http` (hanya template
-  HTTP terhadap URL target). Template network yang melakukan port-probing & credential
-  testing hanya aktif di mode `--intrusive`.
-
-> **Status re-measurement:** re-run penuh pasca-perbaikan **terhenti oleh tekanan memori
-> sistem** (lab Docker berat berdampingan dengan container lain di mesin). Angka
-> clean-nginx pasca-fix belum terukur ulang. Jalankan `python -m benchmark.run --baseline`
-> saat resource longgar untuk memverifikasi FP(Med+) clean-nginx turun ke 0.
+**Yang terbukti:**
+- Cakupan naik dari baseline native: nuclei+adapter menambah temuan nyata (juice-shop 3→15).
+- **False-positive (Medium+) di target bersih = 0.** Sebelum perbaikan, run tanpa `-type http`
+  menghasilkan 9 FP yang ternyata BUKAN tentang nginx — melainkan "Redis/Postgres default
+  login", "mDNS", dll., karena template **network (tcp)** nuclei memindai *seluruh host*
+  lewat `host.docker.internal` (pelanggaran scope).
+- **Perbaikan:** NucleiAdapter non-intrusif dibatasi `-type http` (hanya template HTTP ke URL
+  target); template network yang melakukan port-probing & credential testing hanya aktif di
+  mode `--intrusive`. 5 sisa di clean-nginx hanyalah noise Low/Info (deteksi teknologi), bukan
+  kerentanan.
 
 **Catatan lab:** target lab berbasis HTTP (tanpa 443), jadi adapter `testssl` wajar
-menghasilkan 0 temuan di sini; nilainya terlihat pada target ber-HTTPS nyata.
+menghasilkan 0 temuan di sini; nilainya terlihat pada target ber-HTTPS nyata. dvwa berjalan
+via emulasi amd64 sehingga durasinya jauh lebih lama.
