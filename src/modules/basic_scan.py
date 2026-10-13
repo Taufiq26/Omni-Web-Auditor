@@ -1,58 +1,67 @@
 import ssl
 import socket
 from datetime import datetime, timezone
-from typing import List, Dict
+from typing import List
 from urllib.parse import urlparse
 from src.core.session import ScannerSession
 from src.core.coverage import coverage_entry, STATUS_TESTED
+from src.core.models import (
+    Finding, CoverageEntry,
+    SEVERITY_HIGH, SEVERITY_MEDIUM, SEVERITY_LOW,
+)
+from src.core.logging_setup import get_logger
+
+logger = get_logger(__name__)
+
 
 class BasicScanner:
     def __init__(self, session: ScannerSession):
         self.session = session
-        self.coverage: List[Dict[str, str]] = []
+        self.coverage: List[CoverageEntry] = []
 
     def _add_coverage(self, test: str, status: str, detail: str):
         self.coverage.append(coverage_entry(test, status, detail))
 
-    def check_security_headers(self, url: str) -> List[Dict]:
+    def check_security_headers(self, url: str) -> List[Finding]:
         findings = []
         response = self.session.get_request(url)
-        
+
         if response is None:
             return findings
-            
+
         headers_to_check = {
             'Strict-Transport-Security': 'Enforces secure (HTTP over SSL/TLS) connections to the server',
             'Content-Security-Policy': 'Prevents Cross-Site Scripting (XSS) and other code injection attacks',
             'X-Frame-Options': 'Protects against Clickjacking attacks',
             'X-Content-Type-Options': 'Prevents MIME-sniffing'
         }
-        
+
         for header, remediation_hint in headers_to_check.items():
             if header not in response.headers:
-                findings.append({
-                    "vulnerability": f"Missing Security Header: {header}",
-                    "severity": "Low",
-                    "location": url,
-                    "evidence": f"Header {header} tidak ditemukan pada response HTTP",
-                    "remediation": f"Tambahkan konfigurasi header {header} pada web server. {remediation_hint}."
-                })
-                
+                findings.append(Finding(
+                    vulnerability=f"Missing Security Header: {header}",
+                    severity=SEVERITY_LOW,
+                    location=url,
+                    evidence=f"Header {header} tidak ditemukan pada response HTTP",
+                    remediation=f"Tambahkan konfigurasi header {header} pada web server. {remediation_hint}.",
+                    wstg_ids=("WSTG-CONF-07",),
+                ))
+
         return findings
 
-    def check_ssl_cert(self, domain: str) -> List[Dict]:
+    def check_ssl_cert(self, domain: str) -> List[Finding]:
         findings = []
         parsed = urlparse(domain)
         # Handle cases where domain might be a full URL or just a hostname
         hostname = parsed.hostname or domain.replace("http://", "").replace("https://", "").split("/")[0]
         hostname = hostname.split(':')[0]
-        
+
         context = ssl.create_default_context()
         try:
             with socket.create_connection((hostname, 443), timeout=10) as sock:
                 with context.wrap_socket(sock, server_hostname=hostname) as ssock:
                     cert = ssock.getpeercert()
-                    
+
                     # Check expiration
                     not_after_str = cert.get('notAfter')
                     if not_after_str:
@@ -63,65 +72,69 @@ class BasicScanner:
                         ).replace(tzinfo=timezone.utc)
                         days_left = (not_after_date - datetime.now(timezone.utc)).days
                         if days_left < 14:
-                            findings.append({
-                                "vulnerability": "SSL Certificate Expiring Soon",
-                                "severity": "Medium",
-                                "location": f"{hostname}:443",
-                                "evidence": f"Sertifikat akan kedaluwarsa dalam {days_left} hari ({not_after_str})",
-                                "remediation": "Segera perbarui sertifikat SSL/TLS sebelum masa aktif habis."
-                            })
-                    
-                    # Check protocol version
+                            findings.append(Finding(
+                                vulnerability="SSL Certificate Expiring Soon",
+                                severity=SEVERITY_MEDIUM,
+                                location=f"{hostname}:443",
+                                evidence=f"Sertifikat akan kedaluwarsa dalam {days_left} hari ({not_after_str})",
+                                remediation="Segera perbarui sertifikat SSL/TLS sebelum masa aktif habis.",
+                                wstg_ids=("WSTG-CRYP-01",),
+                            ))
+
+                    # Check protocol version (hanya protokol yang DINEGOSIASIKAN;
+                    # cakupan penuh TLS ada di adapter testssl.sh pada Fase 2).
                     protocol = ssock.version()
                     if protocol in ['SSLv3', 'TLSv1', 'TLSv1.1']:
-                        findings.append({
-                            "vulnerability": "Obsolete SSL/TLS Protocol",
-                            "severity": "High",
-                            "location": f"{hostname}:443",
-                            "evidence": f"Server menggunakan protokol usang: {protocol}",
-                            "remediation": "Nonaktifkan SSLv3, TLS 1.0, dan TLS 1.1. Gunakan minimal TLS 1.2 atau TLS 1.3."
-                        })
-                        
+                        findings.append(Finding(
+                            vulnerability="Obsolete SSL/TLS Protocol",
+                            severity=SEVERITY_HIGH,
+                            location=f"{hostname}:443",
+                            evidence=f"Server menegosiasikan protokol usang: {protocol}",
+                            remediation="Nonaktifkan SSLv3, TLS 1.0, dan TLS 1.1. Gunakan minimal TLS 1.2 atau TLS 1.3.",
+                            wstg_ids=("WSTG-CRYP-01",),
+                        ))
+
         except ssl.SSLError as e:
-            findings.append({
-                "vulnerability": "SSL/TLS Error",
-                "severity": "Medium",
-                "location": f"{hostname}:443",
-                "evidence": f"SSL Error: {str(e)}",
-                "remediation": "Periksa konfigurasi sertifikat SSL/TLS, pastikan valid dan diterbitkan oleh Certificate Authority yang terpercaya."
-            })
+            findings.append(Finding(
+                vulnerability="SSL/TLS Error",
+                severity=SEVERITY_MEDIUM,
+                location=f"{hostname}:443",
+                evidence=f"SSL Error: {str(e)}",
+                remediation="Periksa konfigurasi sertifikat SSL/TLS, pastikan valid dan diterbitkan oleh Certificate Authority yang terpercaya.",
+                wstg_ids=("WSTG-CRYP-01",),
+            ))
         except socket.timeout:
             # Port 443 tidak merespon dalam batas waktu -> target mungkin HTTP-only.
-            print(f"[!] Pemeriksaan SSL/TLS dilewati: timeout ke {hostname}:443.")
+            logger.warning("Pemeriksaan SSL/TLS dilewati: timeout ke %s:443.", hostname)
         except (socket.error, ValueError) as e:
             # mis. connection refused (tanpa HTTPS) atau format tanggal cert aneh.
-            print(f"[!] Pemeriksaan SSL/TLS dilewati untuk {hostname}:443: {e}")
+            logger.warning("Pemeriksaan SSL/TLS dilewati untuk %s:443: %s", hostname, e)
 
         return findings
 
-    def check_exposed_files(self, base_url: str) -> List[Dict]:
+    def check_exposed_files(self, base_url: str) -> List[Finding]:
         findings = []
         base_url = base_url.rstrip('/')
-        
+
         paths_to_check = {
             '/.env': {'signatures': ['DB_PASSWORD', 'APP_KEY', 'DB_HOST', 'SECRET'], 'vuln': 'Exposed .env File'},
             '/.git/config': {'signatures': ['[core]'], 'vuln': 'Exposed Git Repository'},
-            '/robots.txt': {'signatures': ['User-agent:'], 'vuln': 'Information Disclosure via robots.txt', 'severity': 'Low'},
+            '/robots.txt': {'signatures': ['User-agent:'], 'vuln': 'Information Disclosure via robots.txt', 'severity': SEVERITY_LOW},
             '/server-status': {'signatures': ['Apache Server Status'], 'vuln': 'Exposed Apache Server Status'},
             '/.DS_Store': {'signatures': [], 'vuln': 'Exposed .DS_Store File', 'check_binary': b'Bud1'},
             '/backup.zip': {'signatures': [], 'vuln': 'Exposed Backup File', 'check_binary': b'PK\x03\x04'}
         }
-        
+
         for path, info in paths_to_check.items():
             url = f"{base_url}{path}"
             response = self.session.get_request(url, allow_redirects=False)
-            
+
             if response is None:
                 continue
-                
+
             if response.status_code == 200:
                 is_vulnerable = False
-                
+
                 # Check signature
                 if 'check_binary' in info:
                     if response.content.startswith(info['check_binary']) or info['check_binary'] in response.content[:100]:
@@ -132,31 +145,31 @@ class BasicScanner:
                         if sig in text_content:
                             is_vulnerable = True
                             break
-                            
+
                 if is_vulnerable:
-                    severity = info.get('severity', 'High')
-                    findings.append({
-                        "vulnerability": info['vuln'],
-                        "severity": severity,
-                        "location": url,
-                        "evidence": "File ditemukan (HTTP 200) dan cocok dengan signature sensitif.",
-                        "remediation": f"Hapus file {path} dari server publik atau batasi akses menggunakan konfigurasi web server (.htaccess / nginx config)."
-                    })
-                    
+                    findings.append(Finding(
+                        vulnerability=info['vuln'],
+                        severity=info.get('severity', SEVERITY_HIGH),
+                        location=url,
+                        evidence="File ditemukan (HTTP 200) dan cocok dengan signature sensitif.",
+                        remediation=f"Hapus file {path} dari server publik atau batasi akses menggunakan konfigurasi web server (.htaccess / nginx config).",
+                        wstg_ids=("WSTG-CONF-05",),
+                    ))
+
         return findings
 
-    def run_scan(self, target: str) -> List[Dict]:
+    def run_scan(self, target: str) -> List[Finding]:
         all_findings = []
-        
-        print(f"[*] Menjalankan pemeriksaan Security Headers pada {target}...")
+
+        logger.info("Menjalankan pemeriksaan Security Headers pada %s...", target)
         all_findings.extend(self.check_security_headers(target))
         self._add_coverage("Security headers", STATUS_TESTED, f"Dicek 4 header keamanan pada {target}.")
 
-        print(f"[*] Menjalankan pemeriksaan SSL/TLS pada {target}...")
+        logger.info("Menjalankan pemeriksaan SSL/TLS pada %s...", target)
         all_findings.extend(self.check_ssl_cert(target))
-        self._add_coverage("SSL/TLS", STATUS_TESTED, "Dicek masa berlaku sertifikat & versi protokol.")
+        self._add_coverage("SSL/TLS", STATUS_TESTED, "Dicek masa berlaku sertifikat & versi protokol yang dinegosiasikan.")
 
-        print(f"[*] Menjalankan pemeriksaan Exposed Files pada {target}...")
+        logger.info("Menjalankan pemeriksaan Exposed Files pada %s...", target)
         all_findings.extend(self.check_exposed_files(target))
         self._add_coverage("Exposed sensitive files", STATUS_TESTED, "Dicek .env/.git/backup/dll.")
 

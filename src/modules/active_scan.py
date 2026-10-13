@@ -10,8 +10,12 @@ from src.core.coverage import (
     STATUS_SKIPPED,
     STATUS_NOT_APPLICABLE,
 )
+from src.core.models import Finding, CoverageEntry, SEVERITY_HIGH, SEVERITY_MEDIUM
 from src.core.idor_utils import is_uuid, response_similarity
 from src.core.endpoints import EndpointsConfig, INJECT_MARKER
+from src.core.logging_setup import get_logger
+
+logger = get_logger(__name__)
 
 # Payload non-destruktif (tidak mengubah/menghapus data) -- hanya memicu error/reflection.
 SQLI_PROBE = "'"
@@ -40,12 +44,12 @@ class ActiveScanner:
         self.session = session
         self.endpoints = endpoints
         self.session_b = session_b
-        self.coverage: List[Dict[str, str]] = []
+        self.coverage: List[CoverageEntry] = []
 
     def _add_coverage(self, test: str, status: str, detail: str):
         self.coverage.append(coverage_entry(test, status, detail))
 
-    def detect_components(self, url: str) -> List[Dict]:
+    def detect_components(self, url: str) -> List[Finding]:
         findings = []
         response = self.session.get_request(url)
         if not response:
@@ -56,13 +60,14 @@ class ActiveScanner:
         if powered_by:
             outdated_php = ['PHP/5.', 'PHP/7.0', 'PHP/7.1', 'PHP/7.2', 'PHP/7.3', 'PHP/7.4']
             if any(ver in powered_by for ver in outdated_php):
-                findings.append({
-                    "vulnerability": "Outdated Server Component Detected",
-                    "severity": "Medium",
-                    "location": url,
-                    "evidence": f"Header X-Powered-By menunjukkan versi usang: {powered_by}",
-                    "remediation": "Perbarui komponen server (misal: PHP) ke versi terbaru yang masih mendapatkan dukungan keamanan."
-                })
+                findings.append(Finding(
+                    vulnerability="Outdated Server Component Detected",
+                    severity=SEVERITY_MEDIUM,
+                    location=url,
+                    evidence=f"Header X-Powered-By menunjukkan versi usang: {powered_by}",
+                    remediation="Perbarui komponen server (misal: PHP) ke versi terbaru yang masih mendapatkan dukungan keamanan.",
+                    wstg_ids=("WSTG-INFO-08",),
+                ))
 
         # 2. Pengecekan Meta Generator & Scripts
         content_type = response.headers.get('Content-Type', '')
@@ -75,25 +80,27 @@ class ActiveScanner:
                 content = generator['content'].lower()
                 outdated_cms = ['wordpress 4.', 'wordpress 3.', 'joomla! 1.', 'joomla! 2.']
                 if any(cms in content for cms in outdated_cms):
-                    findings.append({
-                        "vulnerability": "Outdated CMS Detected",
-                        "severity": "Medium",
-                        "location": url,
-                        "evidence": f"Tag meta generator menunjukkan versi CMS usang: {generator['content']}",
-                        "remediation": "Perbarui CMS (WordPress/Joomla dll) beserta plugin ke versi terbaru."
-                    })
+                    findings.append(Finding(
+                        vulnerability="Outdated CMS Detected",
+                        severity=SEVERITY_MEDIUM,
+                        location=url,
+                        evidence=f"Tag meta generator menunjukkan versi CMS usang: {generator['content']}",
+                        remediation="Perbarui CMS (WordPress/Joomla dll) beserta plugin ke versi terbaru.",
+                        wstg_ids=("WSTG-INFO-08",),
+                    ))
 
             # Script libraries
             for script in soup.find_all('script', src=True):
                 src = script['src'].lower()
                 if 'jquery-1.' in src or 'jquery-2.' in src:
-                    findings.append({
-                        "vulnerability": "Outdated JavaScript Library",
-                        "severity": "Medium",
-                        "location": url,
-                        "evidence": f"Pustaka JavaScript usang ditemukan pada URL: {script['src']}",
-                        "remediation": "Perbarui pustaka JavaScript (jQuery dll) ke versi terbaru."
-                    })
+                    findings.append(Finding(
+                        vulnerability="Outdated JavaScript Library",
+                        severity=SEVERITY_MEDIUM,
+                        location=url,
+                        evidence=f"Pustaka JavaScript usang ditemukan pada URL: {script['src']}",
+                        remediation="Perbarui pustaka JavaScript (jQuery dll) ke versi terbaru.",
+                        wstg_ids=("WSTG-INFO-08",),
+                    ))
 
         return findings
 
@@ -101,31 +108,33 @@ class ActiveScanner:
         time.sleep(REQUEST_DELAY_SECONDS)  # jeda -> cegah DoS/WAF block
         return self.session.get_request(test_url)
 
-    def _inspect_injection_response(self, response, payload: str, param: str, location: str) -> Optional[Dict]:
+    def _inspect_injection_response(self, response, payload: str, param: str, location: str) -> Optional[Finding]:
         """Deteksi non-destruktif: error SQL atau reflection XSS pada satu respons."""
         if not response:
             return None
         text = response.text
         lowered = text.lower()
         if payload == SQLI_PROBE and any(err in lowered for err in SQL_ERROR_SIGNATURES):
-            return {
-                "vulnerability": f"Potential SQL Injection pada '{param}'",
-                "severity": "High",
-                "location": location,
-                "evidence": "Pesan error database terdeteksi saat menyisipkan kutip tunggal (').",
-                "remediation": "Gunakan Prepared Statements atau ORM. Lakukan sanitasi dan validasi input dengan ketat."
-            }
+            return Finding(
+                vulnerability=f"Potential SQL Injection pada '{param}'",
+                severity=SEVERITY_HIGH,
+                location=location,
+                evidence="Pesan error database terdeteksi saat menyisipkan kutip tunggal (').",
+                remediation="Gunakan Prepared Statements atau ORM. Lakukan sanitasi dan validasi input dengan ketat.",
+                wstg_ids=("WSTG-INPV-05",),
+            )
         if payload == XSS_PROBE and XSS_PROBE in text:
-            return {
-                "vulnerability": f"Reflected XSS pada '{param}'",
-                "severity": "High",
-                "location": location,
-                "evidence": f"Payload '{XSS_PROBE}' dipantulkan kembali tanpa HTML encoding.",
-                "remediation": "Terapkan output encoding/escaping saat menampilkan input pengguna."
-            }
+            return Finding(
+                vulnerability=f"Reflected XSS pada '{param}'",
+                severity=SEVERITY_HIGH,
+                location=location,
+                evidence=f"Payload '{XSS_PROBE}' dipantulkan kembali tanpa HTML encoding.",
+                remediation="Terapkan output encoding/escaping saat menampilkan input pengguna.",
+                wstg_ids=("WSTG-INPV-01",),
+            )
         return None
 
-    def test_input_validation(self, url_with_param: str) -> List[Dict]:
+    def test_input_validation(self, url_with_param: str) -> List[Finding]:
         """Uji SQLi/XSS pada query parameter URL (error-based & reflected)."""
         findings = []
         parsed_url = urlparse(url_with_param)
@@ -150,7 +159,7 @@ class ActiveScanner:
 
         return findings
 
-    def test_input_validation_body(self) -> List[Dict]:
+    def test_input_validation_body(self) -> List[Finding]:
         """Uji SQLi/XSS pada endpoint berbasis body/query JSON (dari --endpoints-file).
 
         Hanya menguji endpoint yang DISIAPKAN MANUAL oleh penguji -- tidak ada
@@ -198,7 +207,7 @@ class ActiveScanner:
         names += [k for k, v in test.get("query", {}).items() if v == INJECT_MARKER]
         return names
 
-    def check_api_idor(self, api_endpoint: str) -> List[Dict]:
+    def check_api_idor(self, api_endpoint: str) -> List[Finding]:
         """Uji IDOR/BOLA berbasis ID numerik berurutan (ID+1).
 
         Diperkuat dengan request KONTROL ke ID yang hampir pasti tidak ada, untuk
@@ -263,19 +272,20 @@ class ActiveScanner:
                 )
                 return findings
 
-        findings.append({
-            "vulnerability": "Broken Object Level Authorization (BOLA/IDOR)",
-            "severity": "High",
-            "location": build_url(test_id),
-            "evidence": (
+        findings.append(Finding(
+            vulnerability="Broken Object Level Authorization (BOLA/IDOR)",
+            severity=SEVERITY_HIGH,
+            location=build_url(test_id),
+            evidence=(
                 f"Resource JSON milik objek lain (ID: {test_id}) dapat diakses (HTTP 200), "
                 f"dan isinya berbeda dari request kontrol ke ID tak-ada (ID: {control_id})."
             ),
-            "remediation": "Terapkan pengecekan otorisasi pada level objek (object-level authorization).",
-        })
+            remediation="Terapkan pengecekan otorisasi pada level objek (object-level authorization).",
+            wstg_ids=("WSTG-ATHZ-04",),
+        ))
         return findings
 
-    def check_idor_two_account(self) -> List[Dict]:
+    def check_idor_two_account(self) -> List[Finding]:
         """Uji IDOR/BOLA dua-akun untuk sistem berbasis UUID (docs/07, Masalah #2).
 
         Akun A (self.session) memiliki objek di idor_object_urls. Tool mengakses URL
@@ -316,16 +326,17 @@ class ActiveScanner:
             if resp_b and resp_b.status_code == 200:
                 similarity = response_similarity(resp_a.text, resp_b.text)
                 if similarity >= IDOR_SIMILARITY_THRESHOLD:
-                    findings.append({
-                        "vulnerability": "Broken Object Level Authorization (BOLA/IDOR) - Cross-Account",
-                        "severity": "High",
-                        "location": url,
-                        "evidence": (
+                    findings.append(Finding(
+                        vulnerability="Broken Object Level Authorization (BOLA/IDOR) - Cross-Account",
+                        severity=SEVERITY_HIGH,
+                        location=url,
+                        evidence=(
                             "Akun B berhasil mengakses objek milik akun A (HTTP 200, isi respons "
                             f"identik ~{similarity:.0%}). Otorisasi level objek tidak diterapkan."
                         ),
-                        "remediation": "Validasi kepemilikan objek terhadap identitas pemanggil pada setiap request.",
-                    })
+                        remediation="Validasi kepemilikan objek terhadap identitas pemanggil pada setiap request.",
+                        wstg_ids=("WSTG-ATHZ-04",),
+                    ))
 
         if tested_any:
             self._add_coverage(
@@ -339,17 +350,17 @@ class ActiveScanner:
             )
         return findings
 
-    def run_scan(self, target: str, has_auth: bool = False) -> List[Dict]:
+    def run_scan(self, target: str, has_auth: bool = False) -> List[Finding]:
         all_findings = []
 
-        print(f"[*] Menjalankan pendeteksian komponen usang pada {target}...")
+        logger.info("Menjalankan pendeteksian komponen usang pada %s...", target)
         all_findings.extend(self.detect_components(target))
 
         parsed = urlparse(target)
 
         # --- SQLi/XSS: query parameter URL ---
         if parsed.query:
-            print(f"[*] Menjalankan pengujian validasi input (SQLi & XSS) pada parameter URL...")
+            logger.info("Menjalankan pengujian validasi input (SQLi & XSS) pada parameter URL...")
             all_findings.extend(self.test_input_validation(target))
             self._add_coverage(
                 "SQLi/XSS (query parameter)", STATUS_TESTED,
@@ -363,7 +374,7 @@ class ActiveScanner:
 
         # --- SQLi/XSS: body/query JSON dari endpoints-file ---
         if self.endpoints and self.endpoints.injection_tests:
-            print(f"[*] Menjalankan pengujian validasi input (SQLi & XSS) pada body JSON endpoint...")
+            logger.info("Menjalankan pengujian validasi input (SQLi & XSS) pada body JSON endpoint...")
             all_findings.extend(self.test_input_validation_body())
             self._add_coverage(
                 "SQLi/XSS (body/JSON endpoint)", STATUS_TESTED,
@@ -377,7 +388,7 @@ class ActiveScanner:
 
         # --- IDOR/BOLA numerik ---
         if has_auth and ('/api/' in parsed.path or 'api' in parsed.netloc):
-            print(f"[*] Menjalankan pengujian IDOR/BOLA (ID+1) pada endpoint API {target}...")
+            logger.info("Menjalankan pengujian IDOR/BOLA (ID+1) pada endpoint API %s...", target)
             all_findings.extend(self.check_api_idor(target))
         else:
             self._add_coverage(
@@ -386,7 +397,7 @@ class ActiveScanner:
             )
 
         # --- IDOR/BOLA dua-akun (UUID) ---
-        print(f"[*] Menjalankan pengujian IDOR/BOLA dua-akun (jika dikonfigurasi)...")
+        logger.info("Menjalankan pengujian IDOR/BOLA dua-akun (jika dikonfigurasi)...")
         all_findings.extend(self.check_idor_two_account())
 
         return all_findings

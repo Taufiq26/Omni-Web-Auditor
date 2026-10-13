@@ -2,12 +2,13 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, HRFlowable
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from typing import List, Dict
+from typing import List
 import datetime
+from src.core.models import Finding, CoverageEntry
 from src.reports.rationale import secure_reason, count_related_findings
 
 class PDFReportGenerator:
-    def __init__(self, findings: List[Dict], target: str, coverage: List[Dict] = None):
+    def __init__(self, findings: List[Finding], target: str, coverage: List[CoverageEntry] = None):
         self.findings = findings
         self.target = target
         self.coverage = coverage or []
@@ -15,7 +16,7 @@ class PDFReportGenerator:
         self.total_medium = 0
         self.total_low = 0
         self._calculate_stats()
-        self.total_skipped = sum(1 for c in self.coverage if c.get('status') == 'SKIPPED')
+        self.total_skipped = sum(1 for c in self.coverage if c.status == 'SKIPPED')
         self.styles = getSampleStyleSheet()
         self._setup_custom_styles()
 
@@ -78,7 +79,7 @@ class PDFReportGenerator:
 
     def _calculate_stats(self):
         for finding in self.findings:
-            sev = finding.get('severity', '').lower()
+            sev = finding.severity.lower()
             if sev in ['high', 'critical']:
                 self.total_high += 1
             elif sev == 'medium':
@@ -187,20 +188,29 @@ class PDFReportGenerator:
         # Business Impact Statement
         story.append(Paragraph("Business Impact", self.styles['SectionHeader']))
         story.append(Paragraph(impact_stmt, self.styles['NormalText']))
-        
+
+        # Disclaimer: ini automated baseline assessment, bukan pengganti pentest penuh.
+        story.append(Spacer(1, 15))
+        story.append(Paragraph(
+            "<i>Catatan metodologi: laporan ini merupakan <b>automated baseline security "
+            "assessment</b>. Hasil 'tidak ada temuan' berarti target lolos pemeriksaan "
+            "otomatis yang dijalankan, bukan jaminan bebas dari seluruh kelas kerentanan. "
+            "Rincian apa yang diuji ada di bagian Scan Coverage &amp; Evidence.</i>",
+            self.styles['NormalText']))
+
         story.append(PageBreak())
         return story
 
-    def _coverage_result(self, entry: Dict):
+    def _coverage_result(self, entry: CoverageEntry):
         """Tentukan (label_hasil, warna, penjelasan) untuk satu baris coverage.
 
         Untuk pengujian TESTED, laporan menyertakan BUKTI: apakah aman (dengan
         alasan singkat) atau ada temuan terkait (rujuk detail teknis). Ini membuat
         laporan tetap informatif meski tidak ada kerentanan sama sekali.
         """
-        status = entry.get('status', 'UNKNOWN')
-        test_name = entry.get('test', '')
-        detail = entry.get('detail', '-')
+        status = entry.status
+        test_name = entry.test
+        detail = entry.detail
 
         if status == 'TESTED':
             related = count_related_findings(test_name, self.findings)
@@ -247,7 +257,7 @@ class PDFReportGenerator:
         for c in self.coverage:
             label, color, explanation = self._coverage_result(c)
             data.append([
-                Paragraph(c.get('test', '-'), self.styles['NormalText']),
+                Paragraph(c.test, self.styles['NormalText']),
                 Paragraph(f"<font color='{color}'><b>{label}</b></font>", self.styles['NormalText']),
                 Paragraph(explanation, self.styles['NormalText']),
             ])
@@ -272,7 +282,7 @@ class PDFReportGenerator:
         story.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor('#BDC3C7'), spaceBefore=10, spaceAfter=30))
         
         if not self.findings:
-            tested = sum(1 for c in self.coverage if c.get('status') == 'TESTED')
+            tested = sum(1 for c in self.coverage if c.status == 'TESTED')
             msg = (
                 f"Tidak ada kerentanan teknis yang ditemukan. Sebanyak {tested} jenis "
                 "pengujian telah dijalankan dan lulus -- rincian bukti tiap pengujian "
@@ -289,11 +299,11 @@ class PDFReportGenerator:
             return story
             
         for i, finding in enumerate(self.findings):
-            vuln = finding.get('vulnerability', 'Unknown')
-            sev = finding.get('severity', 'Unknown')
-            loc = finding.get('location', 'Unknown')
-            evid = finding.get('evidence', 'None')
-            rem = finding.get('remediation', 'None')
+            vuln = finding.vulnerability
+            sev = finding.severity
+            loc = finding.location
+            evid = finding.evidence
+            rem = finding.remediation
             
             sev_lower = sev.lower()
             if sev_lower in ['high', 'critical']:

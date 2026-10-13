@@ -40,7 +40,7 @@ def _no_sleep(monkeypatch):
 
 
 def _coverage_status(scanner, test_name):
-    return next((c["status"] for c in scanner.coverage if c["test"] == test_name), None)
+    return next((c.status for c in scanner.coverage if c.test == test_name), None)
 
 
 def test_idor_uuid_marked_not_applicable():
@@ -73,7 +73,7 @@ def test_idor_numeric_real_finding():
     scanner = ActiveScanner(session_factory())
     findings = scanner.check_api_idor("https://api.x/api/orders/42")
     assert len(findings) == 1
-    assert "BOLA" in findings[0]["vulnerability"]
+    assert "BOLA" in findings[0].vulnerability
 
 
 def test_two_account_idor_detected():
@@ -84,7 +84,7 @@ def test_two_account_idor_detected():
     scanner = ActiveScanner(session_a, endpoints=cfg, session_b=session_b)
     findings = scanner.check_idor_two_account()
     assert len(findings) == 1
-    assert "Cross-Account" in findings[0]["vulnerability"]
+    assert "Cross-Account" in findings[0].vulnerability
     assert _coverage_status(scanner, "IDOR/BOLA (dua-akun UUID)") == STATUS_TESTED
 
 
@@ -116,4 +116,4 @@ def test_body_injection_detects_sql_error():
     ])
     scanner = ActiveScanner(s, endpoints=cfg)
     findings = scanner.test_input_validation_body()
-    assert any("SQL Injection" in f["vulnerability"] for f in findings)
+    assert any("SQL Injection" in f.vulnerability for f in findings)

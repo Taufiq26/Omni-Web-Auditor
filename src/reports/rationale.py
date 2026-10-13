@@ -8,7 +8,8 @@ Pemetaan berbasis kata kunci sengaja transparan & mudah dirawat; jika nama
 pengujian atau judul temuan berubah, cukup perbarui map di sini.
 """
 
-from typing import List, Dict
+from typing import List
+from src.core.models import Finding
 
 # Untuk tiap pengujian (key = substring nama test di coverage):
 #   keywords : kata kunci untuk mengaitkan sebuah finding ke pengujian ini.
@@ -22,9 +23,10 @@ _RATIONALE = {
     },
     "SSL/TLS": {
         "keywords": ["ssl", "tls", "sertifikat", "certificate", "protokol"],
-        "secure": "Sertifikat masih berlaku dan server memakai protokol modern "
-                  "(TLS 1.2/1.3), sehingga komunikasi terenkripsi dengan baik dan "
-                  "tidak rentan terhadap protokol usang.",
+        "secure": "Sertifikat masih berlaku dan protokol yang dinegosiasikan modern "
+                  "(TLS 1.2/1.3). Catatan: cek dasar ini hanya melihat protokol yang "
+                  "dinegosiasikan; audit cipher & protokol lama yang masih diterima "
+                  "dilakukan oleh modul testssl.sh.",
     },
     "Exposed sensitive files": {
         "keywords": ["exposed", "file", ".env", "git", "backup"],
@@ -34,15 +36,16 @@ _RATIONALE = {
     },
     "SQLi/XSS (query parameter)": {
         "keywords": ["sql injection", "xss"],
-        "secure": "Penyisipan payload uji pada parameter query tidak memunculkan "
-                  "pesan error database maupun pantulan skrip, indikasi input "
-                  "divalidasi/di-escape dengan benar.",
+        "secure": "Payload uji dasar (error-based SQLi & reflected XSS) pada parameter "
+                  "query tidak memunculkan error database maupun pantulan skrip. "
+                  "Catatan: belum mencakup blind/time-based SQLi & stored/DOM XSS "
+                  "(dicakup modul ZAP pada Fase 2).",
     },
     "SQLi/XSS (body/JSON endpoint)": {
         "keywords": ["sql injection", "xss"],
-        "secure": "Penyisipan payload uji pada body/parameter JSON endpoint tidak "
-                  "memicu error database maupun reflection, indikasi input "
-                  "divalidasi/di-escape di sisi server.",
+        "secure": "Payload uji dasar pada body/parameter JSON endpoint tidak memicu "
+                  "error database maupun reflection. Catatan: belum mencakup "
+                  "blind/time-based SQLi & stored XSS.",
     },
     "IDOR/BOLA (ID+1 sekuensial)": {
         "keywords": ["idor", "bola", "authorization", "otorisasi"],
@@ -82,7 +85,7 @@ def secure_reason(test_name: str) -> str:
     return val["secure"] if val else _GENERIC_SECURE
 
 
-def count_related_findings(test_name: str, findings: List[Dict]) -> int:
+def count_related_findings(test_name: str, findings: List[Finding]) -> int:
     """Berapa temuan yang terkait dengan pengujian ini (berdasarkan kata kunci)."""
     val = _match(test_name)
     if not val:
@@ -90,7 +93,7 @@ def count_related_findings(test_name: str, findings: List[Dict]) -> int:
     keywords = val["keywords"]
     count = 0
     for f in findings:
-        title = str(f.get("vulnerability", "")).lower()
+        title = str(f.vulnerability).lower()
         if any(kw in title for kw in keywords):
             count += 1
     return count

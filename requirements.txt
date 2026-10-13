@@ -1,4 +1,7 @@
-requests
-urllib3
-beautifulsoup4
-reportlab
+# Runtime dependencies (Python 3.11+)
+requests==2.34.2
+urllib3==2.8.0
+beautifulsoup4==4.15.0
+reportlab==5.0.1
+cvss==3.6
+PyYAML==6.0.3

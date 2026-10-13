@@ -1,0 +1,10 @@
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+# F401 (unused import) di __init__.py adalah re-export paket yang disengaja.
+per-file-ignores = { "**/__init__.py" = ["F401"] }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

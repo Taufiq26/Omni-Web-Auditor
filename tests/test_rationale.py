@@ -1,4 +1,9 @@
 from src.reports.rationale import secure_reason, count_related_findings
+from src.core.models import Finding
+
+
+def _f(vuln):
+    return Finding(vulnerability=vuln, severity="High", location="x", evidence="e", remediation="r")
 
 
 def test_secure_reason_known_test():
@@ -11,15 +16,15 @@ def test_secure_reason_unknown_fallback():
 
 
 def test_count_related_findings_matches_ssl():
-    findings = [{"vulnerability": "Obsolete SSL/TLS Protocol"}]
+    findings = [_f("Obsolete SSL/TLS Protocol")]
     assert count_related_findings("SSL/TLS", findings) == 1
 
 
 def test_count_related_findings_zero_when_unrelated():
-    findings = [{"vulnerability": "Exposed .env File"}]
+    findings = [_f("Exposed .env File")]
     assert count_related_findings("SSL/TLS", findings) == 0
 
 
 def test_count_related_findings_idor():
-    findings = [{"vulnerability": "Broken Object Level Authorization (BOLA/IDOR)"}]
+    findings = [_f("Broken Object Level Authorization (BOLA/IDOR)")]
     assert count_related_findings("IDOR/BOLA (ID+1 sekuensial)", findings) == 1

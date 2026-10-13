@@ -1,6 +1,7 @@
 """Memastikan laporan tidak mengklaim 'SECURE' saat ada tes yang dilewati."""
 from src.reports.pdf_gen import PDFReportGenerator
 from src.core.coverage import coverage_entry, STATUS_TESTED, STATUS_SKIPPED
+from src.core.models import Finding
 
 
 def test_secure_when_no_findings_and_all_tested():
@@ -19,7 +20,7 @@ def test_inconclusive_when_tests_skipped():
 
 def test_findings_override_coverage():
     cov = [coverage_entry("IDOR", STATUS_SKIPPED, "no creds")]
-    findings = [{"severity": "High", "vulnerability": "X"}]
+    findings = [Finding(vulnerability="X", severity="High", location="x", evidence="e", remediation="r")]
     gen = PDFReportGenerator(findings, "https://x", coverage=cov)
     status, _, _ = gen._get_health_status()
     assert status == "CRITICAL"

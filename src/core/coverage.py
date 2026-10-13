@@ -9,7 +9,7 @@ Entri coverage sengaja berupa dict (konsisten dengan format findings antar modul
 dan selalu dibuat sebagai objek baru (immutable-friendly, tidak memutasi input).
 """
 
-from typing import Dict
+from src.core.models import CoverageEntry
 
 # Status cakupan sebuah pengujian.
 STATUS_TESTED = "TESTED"              # tes benar-benar dijalankan terhadap target
@@ -17,7 +17,7 @@ STATUS_SKIPPED = "SKIPPED"           # tes relevan TAPI tidak dijalankan (belum 
 STATUS_NOT_APPLICABLE = "NOT_APPLICABLE"  # tes memang tidak berlaku untuk target ini
 
 
-def coverage_entry(test: str, status: str, detail: str) -> Dict[str, str]:
+def coverage_entry(test: str, status: str, detail: str) -> CoverageEntry:
     """Buat satu entri coverage baru (objek baru, tidak memutasi apa pun).
 
     Args:
@@ -28,4 +28,4 @@ def coverage_entry(test: str, status: str, detail: str) -> Dict[str, str]:
     valid = {STATUS_TESTED, STATUS_SKIPPED, STATUS_NOT_APPLICABLE}
     if status not in valid:
         raise ValueError(f"Status coverage tidak valid: {status!r} (harus salah satu dari {valid})")
-    return {"test": test, "status": status, "detail": detail}
+    return CoverageEntry(test=test, status=status, detail=detail)
