@@ -64,6 +64,15 @@ class Finding:
             updated = replace(updated, evidence=f"{updated.evidence}\n[catatan: {note}]")
         return updated
 
+    @classmethod
+    def from_dict(cls, data: dict) -> "Finding":
+        """Rekonstruksi Finding dari dict (mis. hasil persistensi JSON)."""
+        allowed = {f for f in cls.__dataclass_fields__}
+        kwargs = {k: v for k, v in data.items() if k in allowed}
+        if "wstg_ids" in kwargs and kwargs["wstg_ids"] is not None:
+            kwargs["wstg_ids"] = tuple(kwargs["wstg_ids"])
+        return cls(**kwargs)
+
 
 @dataclass(frozen=True)
 class CoverageEntry:

@@ -1,0 +1,226 @@
+# Checklist OWASP WSTG v4.2 (subset terkurasi, lintas semua kategori).
+# type: auto (diisi tool) | manual (uji penguji) | hybrid (tool + verifikasi manual)
+# sources: sumber yang berkontribusi mengisi status otomatis (cocok ke Finding.wstg_ids)
+# File ini sengaja dibuat mudah diperluas — tambahkan item sesuai kebutuhan engagement.
+
+items:
+  # --- Information Gathering (INFO) ---
+  - id: WSTG-INFO-02
+    category: Information Gathering
+    title: Fingerprint Web Server
+    type: hybrid
+    sources: [native, nuclei]
+    objective: Mengidentifikasi versi/jenis web server & komponen yang terekspos.
+    steps: Periksa header Server/X-Powered-By, banner, dan respons error.
+  - id: WSTG-INFO-05
+    category: Information Gathering
+    title: Review Webpage Content for Information Leakage
+    type: hybrid
+    sources: [native, nuclei]
+    objective: Mencari kebocoran info di HTML/JS/komentar (termasuk link storage publik).
+    steps: Tinjau source halaman, komentar, file JS, dan link pihak ketiga.
+  - id: WSTG-INFO-08
+    category: Information Gathering
+    title: Fingerprint Web Application Framework
+    type: hybrid
+    sources: [native, nuclei]
+    objective: Mendeteksi framework/CMS/library beserta versinya.
+    steps: Periksa meta generator, header, pola URL, dan aset statis.
+
+  # --- Configuration & Deployment (CONF) ---
+  - id: WSTG-CONF-01
+    category: Configuration & Deployment
+    title: Network/Infrastructure Configuration
+    type: hybrid
+    sources: [native, nuclei]
+    objective: Memastikan tidak ada port/servis sensitif terekspos publik.
+    steps: Scan port umum (hanya IP dalam scope); tinjau servis yang terbuka.
+  - id: WSTG-CONF-05
+    category: Configuration & Deployment
+    title: Enumerate Infrastructure and Application Admin Interfaces
+    type: manual
+    objective: Menemukan antarmuka admin yang dapat diakses tanpa otorisasi memadai.
+    steps: Coba path admin umum; verifikasi kontrol akses pada panel admin.
+  - id: WSTG-CONF-07
+    category: Configuration & Deployment
+    title: Test HTTP Strict Transport Security & Security Headers
+    type: auto
+    sources: [native, zap, nuclei]
+    objective: Memastikan header keamanan (HSTS, CSP, X-Frame-Options, dll.) terpasang.
+    steps: Periksa header respons untuk kebijakan keamanan yang diperlukan.
+  - id: WSTG-CONF-11
+    category: Configuration & Deployment
+    title: Test Cloud Storage
+    type: hybrid
+    sources: [native, nuclei]
+    objective: Memastikan bucket/object storage tidak dapat di-listing/akses publik.
+    steps: Uji akses anonim ke endpoint S3/MinIO/storage terkait.
+
+  # --- Identity Management (IDNT) ---
+  - id: WSTG-IDNT-04
+    category: Identity Management
+    title: Account Enumeration
+    type: manual
+    objective: Memastikan sistem tidak membocorkan keberadaan akun.
+    steps: Bandingkan respons login/reset untuk user ada vs tidak ada.
+  - id: WSTG-IDNT-05
+    category: Identity Management
+    title: Weak/Unenforced Username Policy
+    type: manual
+    objective: Memastikan kebijakan username tidak membocorkan informasi.
+    steps: Uji pendaftaran & pesan error terkait username.
+
+  # --- Authentication (ATHN) ---
+  - id: WSTG-ATHN-01
+    category: Authentication
+    title: Credentials Transported over Encrypted Channel
+    type: hybrid
+    sources: [testssl, native]
+    objective: Memastikan kredensial hanya dikirim via HTTPS.
+    steps: Pastikan form/endpoint login memakai TLS; cek downgrade.
+  - id: WSTG-ATHN-02
+    category: Authentication
+    title: Default Credentials
+    type: manual
+    objective: Memastikan tidak ada kredensial default yang aktif.
+    steps: Uji kredensial default umum pada akun uji sendiri.
+  - id: WSTG-ATHN-03
+    category: Authentication
+    title: Weak Lockout / Rate Limiting
+    type: manual
+    objective: Memastikan ada proteksi brute-force (lockout/rate limit).
+    steps: Uji beberapa percobaan login gagal (pakai akun uji sendiri, terbatas).
+  - id: WSTG-ATHN-07
+    category: Authentication
+    title: Weak Password Policy
+    type: manual
+    objective: Memastikan kebijakan password cukup kuat.
+    steps: Coba set password lemah pada akun uji.
+
+  # --- Session Management (SESS) ---
+  - id: WSTG-SESS-02
+    category: Session Management
+    title: Cookie Attributes
+    type: auto
+    sources: [zap]
+    objective: Memastikan cookie sesi memakai Secure/HttpOnly/SameSite.
+    steps: Periksa atribut Set-Cookie pada respons terautentikasi.
+  - id: WSTG-SESS-03
+    category: Session Management
+    title: Session Fixation
+    type: manual
+    objective: Memastikan ID sesi berganti setelah login.
+    steps: Bandingkan ID sesi sebelum & sesudah login (akun uji).
+  - id: WSTG-SESS-06
+    category: Session Management
+    title: Logout Functionality
+    type: manual
+    objective: Memastikan logout benar-benar mencabut sesi/token.
+    steps: Logout lalu coba pakai token lama.
+
+  # --- Authorization (ATHZ) ---
+  - id: WSTG-ATHZ-02
+    category: Authorization
+    title: Bypassing Authorization Schema (Vertical)
+    type: manual
+    objective: Memastikan user biasa tidak dapat akses fungsi admin.
+    steps: Dengan akun user uji, coba endpoint/aksi khusus admin.
+  - id: WSTG-ATHZ-04
+    category: Authorization
+    title: Insecure Direct Object References (IDOR/BOLA)
+    type: hybrid
+    sources: [native]
+    objective: Memastikan objek hanya dapat diakses pemiliknya.
+    steps: Uji ID+1 (numerik) & dua-akun (UUID) memakai akun uji sendiri.
+
+  # --- Input Validation (INPV) ---
+  - id: WSTG-INPV-01
+    category: Input Validation
+    title: Reflected Cross Site Scripting
+    type: hybrid
+    sources: [zap, native]
+    objective: Memastikan input yang dipantulkan di-encode dengan benar.
+    steps: Sisipkan payload uji non-destruktif; cek reflection tanpa encoding.
+  - id: WSTG-INPV-02
+    category: Input Validation
+    title: Stored Cross Site Scripting
+    type: manual
+    objective: Memastikan input tersimpan tidak dieksekusi sebagai skrip.
+    steps: Simpan payload uji; cek rendering di halaman lain.
+  - id: WSTG-INPV-05
+    category: Input Validation
+    title: SQL Injection
+    type: hybrid
+    sources: [native, zap, sqlmap]
+    objective: Memastikan query ternalisasi dan input divalidasi.
+    steps: Uji error-based & (di staging) sqlmap non-destruktif.
+  - id: WSTG-INPV-12
+    category: Input Validation
+    title: Command Injection
+    type: hybrid
+    sources: [nuclei, zap]
+    objective: Memastikan input tidak mencapai eksekusi perintah OS.
+    steps: Uji payload deteksi non-destruktif pada parameter relevan.
+  - id: WSTG-INPV-19
+    category: Input Validation
+    title: Server-Side Request Forgery (SSRF)
+    type: manual
+    objective: Memastikan server tidak dapat dipaksa meminta URL internal.
+    steps: Uji parameter yang menerima URL dengan target terkontrol penguji.
+
+  # --- Error Handling (ERRH) ---
+  - id: WSTG-ERRH-01
+    category: Error Handling
+    title: Improper Error Handling
+    type: hybrid
+    sources: [nuclei, zap]
+    objective: Memastikan pesan error tidak membocorkan detail internal.
+    steps: Picu error & tinjau stack trace/informasi sensitif.
+
+  # --- Cryptography (CRYP) ---
+  - id: WSTG-CRYP-01
+    category: Cryptography
+    title: Weak Transport Layer Security
+    type: auto
+    sources: [testssl, native]
+    objective: Memastikan hanya TLS 1.2/1.3 & cipher kuat yang diterima.
+    steps: Audit protokol & cipher yang diterima server (testssl.sh).
+
+  # --- Business Logic (BUSL) ---
+  - id: WSTG-BUSL-01
+    category: Business Logic
+    title: Business Logic Data Validation
+    type: manual
+    objective: Memastikan alur bisnis tidak dapat disalahgunakan (mis. harga/kuota).
+    steps: Uji manipulasi parameter alur bisnis memakai akun uji.
+  - id: WSTG-BUSL-07
+    category: Business Logic
+    title: Defenses Against Application Misuse
+    type: manual
+    objective: Memastikan aplikasi mendeteksi/menahan penyalahgunaan.
+    steps: Uji pola penggunaan abnormal yang wajar.
+
+  # --- Client-Side (CLNT) ---
+  - id: WSTG-CLNT-09
+    category: Client-side
+    title: Clickjacking
+    type: auto
+    sources: [zap, native, nuclei]
+    objective: Memastikan proteksi framing (X-Frame-Options/CSP frame-ancestors).
+    steps: Periksa header anti-framing.
+  - id: WSTG-CLNT-04
+    category: Client-side
+    title: Client-side URL Redirect (Open Redirect)
+    type: hybrid
+    sources: [zap, nuclei]
+    objective: Memastikan parameter redirect tidak dapat diarahkan ke domain luar.
+    steps: Uji parameter redirect dengan domain terkontrol penguji.
+
+  # --- API (khusus, selaras WSTG-API) ---
+  - id: WSTG-APIT-01
+    category: API Testing
+    title: API Broken Object Level Authorization
+    type: hybrid
+    sources: [native]
+    objective: Memastikan endpoint API menerapkan otorisasi level objek.
+    steps: Uji IDOR dua-akun pada endpoint API (akun uji sendiri).
