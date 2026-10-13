@@ -54,11 +54,15 @@ Terukur dengan ketiga target hidup dan NucleiAdapter non-intrusif dibatasi `-typ
 |-------------|----------|-------------|----------|--------|-----------|------------------|
 | juice-shop  | 15       | 1/3         | 5        | 33%    | -         | -                |
 | dvwa        | 4        | 1/1         | 3        | 100%   | -         | -                |
-| clean-nginx | 5        | 0/0         | 0        | -      | **0**     | 5                |
+| clean-nginx | 0–5      | 0/0         | 0        | -      | **0**     | 0–5              |
 
 **Yang terbukti:**
 - Cakupan naik dari baseline native: nuclei+adapter menambah temuan nyata (juice-shop 3→15).
-- **False-positive (Medium+) di target bersih = 0.** Sebelum perbaikan, run tanpa `-type http`
+- Recall & Matched/App deterministik antar-run (juice-shop 1/3, dvwa 1/1).
+- **False-positive (Medium+) di target bersih = 0 (stabil antar-run).** Noise Low/Info di
+  clean-nginx bervariasi 0–5 per run (deteksi teknologi nginx info-level yang fluktuatif,
+  bukan kerentanan) — run baseline terakhir (2026-10-13) menghasilkan 0 temuan sama sekali.
+  Sebelum perbaikan, run tanpa `-type http`
   menghasilkan 9 FP yang ternyata BUKAN tentang nginx — melainkan "Redis/Postgres default
   login", "mDNS", dll., karena template **network (tcp)** nuclei memindai *seluruh host*
   lewat `host.docker.internal` (pelanggaran scope).
