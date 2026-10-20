@@ -1,12 +1,18 @@
 """Mesin verdict: menentukan PASS / FAIL / INCOMPLETE untuk sebuah engagement.
 
-Aturan (docs/08 §1):
+SCOPE: verdict ini menilai HANYA item yang dapat diperiksa tool (type auto + hybrid,
+lihat ChecklistItem.is_auto). Item MURNI MANUAL tidak ikut dinilai di sini — item itu
+dipisahkan ke Lembar Kerja Manual terpisah (manual_worksheet). Dengan begitu verdict
+tool fokus melaporkan "apa yang tool periksa dan berhasil/tidaknya", bukan menyatakan
+keamanan menyeluruh.
+
+Aturan:
 - FAIL   : ada temuan Critical/High yang masih terbuka.
-- PASS   : semua item relevan (non-NA) berstatus PASS & berbukti, tidak ada temuan
-           Critical/High terbuka, temuan Medium terbuka semua risk-accepted, dan
+- PASS   : semua item TOOL (auto+hybrid, non-NA) berstatus PASS & berbukti, tidak ada
+           temuan Critical/High terbuka, temuan Medium terbuka semua risk-accepted, dan
            laporan sudah ditandatangani.
-- INCOMPLETE: ada item relevan belum dikerjakan / bukti kurang / Medium belum
-           di-accept / belum sign-off.
+- INCOMPLETE: ada item tool belum dikerjakan / bukti kurang / Medium belum di-accept /
+           belum sign-off.
 
 FAIL diprioritaskan di atas INCOMPLETE.
 """
@@ -47,7 +53,12 @@ def evaluate(engagement: Engagement, items: List[ChecklistItem], findings: List[
     reasons: List[str] = []
 
     # 2. Item relevan belum selesai / bukti kurang.
+    #    SCOPE TOOL: verdict ini hanya menilai item yang dapat diperiksa tool
+    #    (auto + hybrid). Item MURNI MANUAL dinilai di Lembar Kerja Manual terpisah,
+    #    sehingga verdict tool fokus pada "apa yang tool periksa & hasilnya".
     for item in items:
+        if not item.is_auto:  # murni manual -> bukan ranah verdict tool
+            continue
         state = engagement.item_states.get(item.id, {"status": CHK_TODO, "evidence": []})
         status = state.get("status", CHK_TODO)
         if status == CHK_NA:

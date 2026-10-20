@@ -73,6 +73,23 @@ def test_pass_when_high_fixed():
     assert result.status == VERDICT_PASS
 
 
+def test_manual_items_do_not_block_tool_verdict():
+    """Item murni manual (type=manual) TIDAK boleh membuat verdict tool INCOMPLETE."""
+    items = load_checklist()
+    eng = Engagement(name="e")
+    eng.ensure_items(items)
+    # Hanya item tool (auto+hybrid) yang di-pass; item manual sengaja dibiarkan TODO.
+    for it in items:
+        if it.is_auto:
+            eng.set_item(it.id, CHK_PASS, note="ok", auto=True)
+    eng.signoff = {"name": "T", "statement": "s", "signed_at": "now"}
+    result = evaluate(eng, items, [])
+    assert result.status == VERDICT_PASS
+    # Tidak ada item manual yang disebut sebagai alasan.
+    manual_ids = [it.id for it in items if not it.is_auto]
+    assert not any(mid in r for r in result.reasons for mid in manual_ids)
+
+
 def test_manual_pass_requires_evidence():
     items = load_checklist()
     eng = Engagement(name="e")

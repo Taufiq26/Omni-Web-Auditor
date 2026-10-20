@@ -213,13 +213,23 @@ def cmd_signoff(args) -> None:
 def cmd_report(args) -> None:
     eng = Engagement.load(_resolve_name(args.name))
     from src.reports.pentest_report import generate_pentest_report
+    from src.reports.manual_worksheet import generate_manual_worksheet
     items = load_checklist()
     findings = [Finding.from_dict(f) for f in eng.findings]
     coverage = [CoverageEntry(**c) for c in eng.coverage]
     verdict = evaluate(eng, items, findings)
+
+    # 1) Laporan tool otomatis (fokus item auto+hybrid yang tool periksa).
     out = args.output or os.path.join(eng.dir, f"pentest_report_{eng.name}.pdf")
     generate_pentest_report(eng, items, findings, coverage, verdict, out)
-    logger.info("Laporan dibuat: %s", out)
+    logger.info("Laporan tool dibuat: %s", out)
+
+    # 2) Lembar kerja manual TERPISAH (item murni manual untuk pen-tester).
+    manual_items = [it for it in items if not it.is_auto]
+    if manual_items and not args.no_worksheet:
+        ws = os.path.join(eng.dir, f"manual_worksheet_{eng.name}.pdf")
+        generate_manual_worksheet(eng, items, ws)
+        logger.info("Lembar kerja manual dibuat: %s (%d item)", ws, len(manual_items))
 
 
 # ----------------------------- shared -----------------------------
@@ -299,9 +309,11 @@ def build_parser() -> argparse.ArgumentParser:
     ps.add_argument("--statement", default="Saya menyatakan hasil asesmen ini benar sesuai metodologi WSTG.")
     ps.set_defaults(func=cmd_signoff)
 
-    prp = sub.add_parser("report", help="Hasilkan laporan PDF")
+    prp = sub.add_parser("report", help="Hasilkan laporan PDF (tool + lembar kerja manual)")
     prp.add_argument("name", nargs="?")
     prp.add_argument("--output")
+    prp.add_argument("--no-worksheet", action="store_true",
+                     help="Jangan hasilkan lembar kerja manual terpisah")
     prp.set_defaults(func=cmd_report)
 
     return p
