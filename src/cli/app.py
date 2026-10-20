@@ -123,7 +123,7 @@ def cmd_run(args) -> None:
     eng.last_run_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     items = load_checklist()
-    autofill(eng, items, findings, sources_ran_from_coverage(coverage))
+    autofill(eng, items, findings, sources_ran_from_coverage(coverage), coverage)
     eng.save()
 
     logger.info("Selesai: %d temuan, %d entri coverage.", len(findings), len(coverage))

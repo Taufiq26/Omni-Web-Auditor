@@ -49,6 +49,37 @@ def test_autofill_todo_when_source_not_run():
     assert eng.item_states["WSTG-CRYP-01"]["status"] == CHK_TODO
 
 
+def test_autofill_no_false_pass_when_core_test_skipped():
+    """INPV-05 (SQLi) TIDAK boleh PASS bila uji inti SQLi SKIPPED/NOT_APPLICABLE."""
+    eng = Engagement(name="fp")
+    items = load_checklist()
+    cov = [
+        coverage_entry("SQLi/XSS (query parameter)", "NOT_APPLICABLE", "tak ada query"),
+        coverage_entry("SQLi/XSS (body/JSON endpoint)", STATUS_SKIPPED, "tanpa endpoints-file"),
+    ]
+    autofill(eng, items, [], {"native"}, cov)
+    assert eng.item_states["WSTG-INPV-05"]["status"] != CHK_PASS
+
+
+def test_autofill_pass_when_core_test_actually_tested():
+    """INPV-05 boleh PASS bila uji inti SQLi benar-benar TESTED & tanpa temuan."""
+    eng = Engagement(name="tp")
+    items = load_checklist()
+    cov = [coverage_entry("SQLi/XSS (body/JSON endpoint)", STATUS_TESTED, "diuji 2 endpoint")]
+    autofill(eng, items, [], {"native"}, cov)
+    assert eng.item_states["WSTG-INPV-05"]["status"] == CHK_PASS
+
+
+def test_autofill_resets_stale_auto_pass_to_todo():
+    """Item yang sebelumnya auto-PASS dikembalikan ke TODO bila kini tak teruji cukup."""
+    eng = Engagement(name="reset")
+    items = load_checklist()
+    eng.set_item("WSTG-INPV-05", CHK_PASS, auto=True, source="native")  # pass basi
+    cov = [coverage_entry("SQLi/XSS (body/JSON endpoint)", STATUS_SKIPPED, "skip")]
+    autofill(eng, items, [], {"native"}, cov)
+    assert eng.item_states["WSTG-INPV-05"]["status"] == CHK_TODO
+
+
 def test_autofill_respects_manual():
     eng = Engagement(name="e4")
     items = load_checklist()
