@@ -107,13 +107,21 @@ Bila hanya ada satu engagement, nama boleh dihilangkan.
 
 ## ✅ Definisi "Lolos" (Verdict)
 
-- **FAIL** — ada temuan `Critical`/`High` yang belum tuntas (accept tidak berlaku untuk High+).
-- **PASS** — semua item checklist relevan (non-N/A) berstatus `pass` & berbukti, tidak ada
-  `Critical`/`High` terbuka, temuan `Medium` semua *risk-accepted*, dan laporan sudah **sign-off**.
-- **INCOMPLETE** — masih ada item belum dikerjakan / bukti kurang / `Medium` belum di-accept /
-  belum sign-off.
+> **Scope verdict:** verdict menilai **hanya item yang dapat diperiksa tool** (type `auto`
+> & `hybrid`). Item **murni manual** tidak ikut dinilai di sini — dipisahkan ke
+> **Lembar Kerja Manual** (lihat di bawah). Jadi `PASS` berarti **lolos pemeriksaan
+> otomatis**, bukan sertifikasi keamanan menyeluruh.
 
-Item `manual`/`hybrid` yang dinilai lulus **wajib** melampirkan bukti, atau verdict tetap `INCOMPLETE`.
+- **FAIL** — ada temuan `Critical`/`High` yang belum tuntas (accept tidak berlaku untuk High+).
+- **PASS** — semua item tool relevan (`auto`/`hybrid`, non-N/A) berstatus `pass` & berbukti,
+  tidak ada `Critical`/`High` terbuka, temuan `Medium` semua *risk-accepted*, dan laporan
+  sudah **sign-off**.
+- **INCOMPLETE** — masih ada item tool belum dikerjakan / bukti kurang / `Medium` belum
+  di-accept / belum sign-off.
+
+Item `hybrid` yang dinilai manual lulus **wajib** melampirkan bukti, atau verdict tetap
+`INCOMPLETE`. Pengujian ber-status `SKIPPED` (mis. adapter belum tersedia) berarti tool
+**mampu namun belum dijalankan** — bukan indikasi aman.
 
 ---
 
@@ -136,13 +144,26 @@ CI (GitHub Actions) menjalankan lint + test + coverage pada setiap push/PR.
 
 ---
 
-## 📄 Isi Laporan PDF
+## 📄 Output Laporan (dua file terpisah)
 
+`audit report <nama>` menghasilkan **dua dokumen**: laporan tool otomatis + lembar kerja
+manual. Pemisahan ini menjaga laporan tool fokus pada **apa yang tool periksa & hasilnya**,
+sementara pengujian manual punya dokumennya sendiri.
+
+### A. `pentest_report_<nama>.pdf` — Laporan Tool (otomatis)
 1. **Cover & Verdict** — target, periode, penguji + peran, label "WSTG-based self-assessment".
 2. **Scope & Rules of Engagement**.
 3. **Metodologi** — WSTG v4.2 + daftar tool.
-4. **Executive Summary** — ringkasan severity + dasar verdict.
-5. **Checklist Matrix** — status tiap item WSTG + jumlah bukti.
-6. **Findings & Remediation** — severity, skor CVSS, WSTG-ID, lokasi, bukti, remediasi, status.
-7. **Lampiran Bukti** — daftar file + hash SHA-256.
-8. **Sign-off** — nama, peran, pernyataan (atau watermark DRAFT bila belum).
+4. **Batasan Asesmen & Cakupan Manual** — penegasan: cakupan otomatis terbatas **bukan**
+   berarti aman; sisanya ditangani manual oleh pen-tester (ada di dokumen B).
+5. **Executive Summary** — ringkasan severity + dasar verdict.
+6. **Checklist Matrix (auto & hybrid)** — hanya item yang dapat diperiksa tool + jumlah bukti.
+7. **Cakupan Pengujian (Coverage)** — status `TESTED`/`SKIPPED`/`NOT_APPLICABLE` tiap tes + alasan.
+8. **Findings & Remediation** — severity, skor CVSS, WSTG-ID, lokasi, bukti, remediasi, status.
+9. **Lampiran Bukti** — daftar file + hash SHA-256.
+10. **Sign-off** — nama, peran, pernyataan (atau watermark DRAFT bila belum).
+
+### B. `manual_worksheet_<nama>.pdf` — Lembar Kerja Manual
+Berisi **hanya item murni manual** (type `manual`) yang tidak dapat dinilai otomatis
+(mis. session fixation, business logic, SSRF, stored XSS, authz vertical bypass), lengkap
+dengan objective & langkah untuk diisi pen-tester. Nonaktifkan dengan `--no-worksheet`.
